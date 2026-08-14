@@ -43,7 +43,8 @@ Everything is packed into **two clean, standalone files** (`overlay_manager.h` a
 | 🔗 **Real-Time Follow Drag** | Sub-windows anchored to a parent window smoothly follow the parent's movement in real time (`OnParentMoved`). |
 | 🏝️ **Independent Multi-Window System** | Spawn unlimited secondary windows with dedicated DirectX 11 swapchains, custom ImGui render callbacks, and independent `HWND_TOPMOST` z-orders. |
 | 🖥️ **Multi-Monitor Display Snapping** | Automatically detects active display monitor work areas (`MonitorFromWindow` / `rcWork`) across multi-screen gaming setups. |
-| ⏱️ **Auto-Dismiss On Finish** | Progress windows can remain visible for a configurable delay (e.g. 2.0s) after reaching 100% before smoothly closing. |
+| 🛡️ **Anti-Capture (Streamer Mode)** | Hide overlays completely from OBS, Discord stream, Xbox Game Bar, and screenshots (`WDA_EXCLUDEFROMCAPTURE`) while remaining 100% visible on your monitor. |
+| 🔒 **Taskbar & Alt+Tab Stealth** | Hide any overlay or main window from the Windows Taskbar and Alt+Tab application switchers (`WS_EX_TOOLWINDOW`). |
 | 🔒 **Antivirus Hardened** | WIC image loading, Control Flow Guard (`/guard:cf`), ASLR, and DEP enabled (0 detections on VirusTotal). |
 | 📦 **2-File Drop-In Architecture** | Zero complex dependencies—just drop `overlay_manager.h` and `overlay_manager.cpp` into your project! |
 
@@ -213,6 +214,25 @@ OverlayManager::Get().ShowDetachedProgress(
     download_progress, // 0.0f to 1.0f
     cfg
 );
+```
+
+### 4. Streamer Mode / Anti-Capture Protection (OBS & Discord Invisible)
+
+```cpp
+// 1. Configure per-window to be invisible to screen capture:
+OverlayConfig cfg;
+cfg.exclude_from_capture = true; // Sets WDA_EXCLUDEFROMCAPTURE automatically
+
+// 2. Or toggle capture visibility at runtime:
+win->SetCaptureHidden(true); // Invisible to OBS / Discord / Screenshots
+win->SetCaptureHidden(false); // Visible to capture
+
+// 3. Or toggle all windows globally:
+OverlayManager::Get().SetCaptureHiddenAll(true);
+
+// 4. Start background capture protection monitor:
+OverlayManager::Get().StartCaptureMonitor(1000); // Scans and enforces every 1000ms
+OverlayManager::Get().StopCaptureMonitor();
 ```
 
 ---

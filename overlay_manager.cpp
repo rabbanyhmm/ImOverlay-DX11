@@ -32,6 +32,10 @@ Window::Window(const std::string& id, ID3D11Device* device,
 
 Window::~Window()
 {
+    if (m_hwnd && m_config.exclude_from_capture)
+    {
+        ::SetWindowDisplayAffinity(m_hwnd, WDA_NONE);
+    }
     if (m_rtv)
     {
         m_rtv->Release();
@@ -187,6 +191,12 @@ void Window::InitWindow(IDXGIFactory* factory)
     ::DwmExtendFrameIntoClientArea(m_hwnd, &margins);
     BYTE byte_alpha = (BYTE)(m_alpha * 255.f);
     ::SetLayeredWindowAttributes(m_hwnd, 0, byte_alpha, LWA_ALPHA);
+
+    // Screen Capture Exclusion (Streamer Mode)
+    if (m_config.exclude_from_capture && m_hwnd)
+    {
+        ::SetWindowDisplayAffinity(m_hwnd, WDA_EXCLUDEFROMCAPTURE);
+    }
 
     // Direct3D swapchain creation
     if (m_device && factory)
@@ -380,6 +390,15 @@ void Window::SetTaskbarVisible(bool visible)
         ::SetWindowLongPtr(m_hwnd, GWL_EXSTYLE, ex);
         ::SetWindowPos(m_hwnd, nullptr, 0, 0, 0, 0,
                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED | SWP_NOACTIVATE);
+    }
+}
+
+void Window::SetCaptureHidden(bool hide)
+{
+    m_config.exclude_from_capture = hide;
+    if (m_hwnd && ::IsWindow(m_hwnd))
+    {
+        ::SetWindowDisplayAffinity(m_hwnd, hide ? WDA_EXCLUDEFROMCAPTURE : WDA_NONE);
     }
 }
 
@@ -812,6 +831,11 @@ LRESULT CALLBACK Window::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
 // Manager Implementation
 // ============================================================================
 
+Manager::~Manager()
+{
+    StopCaptureMonitor();
+}
+
 void Manager::Init(HWND hwnd, const ImVec2& initial_pos, const ImVec2& menu_size)
 {
     m_hwnd = hwnd;
@@ -846,6 +870,116 @@ void Manager::SetTopmost(bool topmost)
         HWND insert_after = topmost ? HWND_TOPMOST : HWND_NOTOPMOST;
         ::SetWindowPos(m_hwnd, insert_after, 0, 0, 0, 0,
                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    }
+}
+
+// --- Screen Capture Protection & Background Monitor ---
+
+void Manager::SetCaptureHidden(HWND hwnd, bool hide)
+{
+    if (hwnd && ::IsWindow(hwnd))
+    {
+        ::SetWindowDisplayAffinity(hwnd, hide ? WDA_EXCLUDEFROMCAPTURE : WDA_NONE);
+        std::lock_guard<std::mutex> lock(m_hidden_windows_mutex);
+        if (hide)
+            m_hidden_capture_windows.insert(hwnd);
+        else
+            m_hidden_capture_windows.erase(hwnd);
+    }
+}
+
+void Manager::SetCaptureHiddenAll(bool hide)
+{
+    if (m_hwnd)
+        SetCaptureHidden(m_hwnd, hide);
+
+    for (auto& overlay : m_floating_overlays)
+    {
+        if (overlay && overlay->GetHwnd())
+        {
+            overlay->SetCaptureHidden(hide);
+            std::lock_guard<std::mutex> lock(m_hidden_windows_mutex);
+            if (hide)
+                m_hidden_capture_windows.insert(overlay->GetHwnd());
+            else
+                m_hidden_capture_windows.erase(overlay->GetHwnd());
+        }
+    }
+}
+
+void Manager::StartCaptureMonitor(uint32_t poll_interval_ms)
+{
+    if (m_monitor_running.load())
+        return;
+
+    m_monitor_running = true;
+    m_monitor_thread = std::thread(&Manager::CaptureMonitorLoop, this, poll_interval_ms);
+}
+
+void Manager::StopCaptureMonitor()
+{
+    m_monitor_running = false;
+    if (m_monitor_thread.joinable())
+    {
+        m_monitor_thread.join();
+    }
+}
+
+void Manager::CaptureMonitorLoop(uint32_t poll_interval_ms)
+{
+    while (m_monitor_running.load())
+    {
+        // Enforce capture exclusion on all active overlay windows
+        if (m_hwnd && ::IsWindow(m_hwnd))
+        {
+            ::SetWindowDisplayAffinity(m_hwnd, WDA_EXCLUDEFROMCAPTURE);
+        }
+
+        for (auto& overlay : m_floating_overlays)
+        {
+            if (overlay && overlay->GetHwnd() && ::IsWindow(overlay->GetHwnd()))
+            {
+                if (overlay->IsCaptureHidden())
+                {
+                    ::SetWindowDisplayAffinity(overlay->GetHwnd(), WDA_EXCLUDEFROMCAPTURE);
+                }
+            }
+        }
+
+        // Clean up any stale destroyed HWNDs
+        {
+            std::lock_guard<std::mutex> lock(m_hidden_windows_mutex);
+            for (auto it = m_hidden_capture_windows.begin(); it != m_hidden_capture_windows.end();)
+            {
+                if (!::IsWindow(*it))
+                    it = m_hidden_capture_windows.erase(it);
+                else
+                    ++it;
+            }
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(poll_interval_ms));
+    }
+}
+
+void Manager::SetTaskbarVisibleAll(bool visible)
+{
+    if (m_hwnd)
+    {
+        LONG_PTR ex = ::GetWindowLongPtr(m_hwnd, GWL_EXSTYLE);
+        if (visible)
+            ex = (ex & ~WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW;
+        else
+            ex = (ex & ~WS_EX_APPWINDOW) | WS_EX_TOOLWINDOW;
+        ::SetWindowLongPtr(m_hwnd, GWL_EXSTYLE, ex);
+        ::SetWindowPos(m_hwnd, nullptr, 0, 0, 0, 0,
+                       SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED | SWP_NOACTIVATE);
+    }
+
+    for (auto& overlay : m_floating_overlays)
+    {
+        if (overlay)
+            overlay->SetTaskbarVisible(visible);
     }
 }
 

@@ -12,8 +12,12 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <memory>
 #include <functional>
+#include <thread>
+#include <atomic>
+#include <mutex>
 #include "imgui.h"
 #include "imgui_internal.h"
 
@@ -22,6 +26,16 @@
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "d3dcompiler.lib")
 #pragma comment(lib, "dwmapi.lib")
+#endif
+
+#ifndef WDA_NONE
+#define WDA_NONE 0x00000000
+#endif
+#ifndef WDA_MONITOR
+#define WDA_MONITOR 0x00000001
+#endif
+#ifndef WDA_EXCLUDEFROMCAPTURE
+#define WDA_EXCLUDEFROMCAPTURE 0x00000011
 #endif
 
 namespace ImOverlay
@@ -69,6 +83,7 @@ struct Config
 
     bool is_topmost = true;             // Stay above full-screen games/apps (HWND_TOPMOST)
     bool hide_from_taskbar = true;      // Hide from taskbar and Alt+Tab (WS_EX_TOOLWINDOW)
+    bool exclude_from_capture = false;  // Streamer Mode: Hide from OBS/Discord/Screenshots (WDA_EXCLUDEFROMCAPTURE)
     bool is_movable = true;             // Draggable anywhere by user (HTCAPTION)
     bool is_click_through = false;      // Visual-only click-through toggle
     bool start_hidden = false;          // Create window initially hidden
@@ -166,6 +181,9 @@ public:
 
     void SetTaskbarVisible(bool visible);
     bool IsTaskbarVisible() const { return !m_config.hide_from_taskbar; }
+
+    void SetCaptureHidden(bool hide);
+    bool IsCaptureHidden() const { return m_config.exclude_from_capture; }
 
     void SetClickThrough(bool click_through);
     bool IsClickThrough() const { return m_config.is_click_through; }
@@ -283,7 +301,7 @@ public:
         return instance;
     }
 
-    // Initialization
+    // Initialization & Direct3D Binding
     void Init(HWND hwnd, const ImVec2& initial_pos, const ImVec2& menu_size);
     void SetD3DObjects(IDXGISwapChain* swap_chain, ID3D11Device* device, ID3D11RenderTargetView** rtv);
     void SetDXGIFactory(IDXGIFactory* factory) { m_dxgi_factory = factory; }
@@ -306,6 +324,16 @@ public:
     void SetTopmost(bool topmost);
     bool IsTopmost() const { return m_is_topmost; }
     void SetAutoTopmost(bool enable) { m_auto_topmost = enable; }
+
+    // Screen Capture Protection (Streamer Mode / Anti-Recording)
+    void SetCaptureHidden(HWND hwnd, bool hide);
+    void SetCaptureHiddenAll(bool hide);
+    void StartCaptureMonitor(uint32_t poll_interval_ms = 1000);
+    void StopCaptureMonitor();
+    bool IsCaptureMonitorRunning() const { return m_monitor_running.load(); }
+
+    // Taskbar & Alt+Tab Controls
+    void SetTaskbarVisibleAll(bool visible);
 
     // Registration of expandable UI elements
     void RegisterElement(const std::string& name, const ImVec2& pos, const ImVec2& size, bool interactive = true);
@@ -362,10 +390,11 @@ public:
     ImVec4 GetPadding() const { return m_padding; }
     bool HasActiveOutsideElements() const { return m_has_outside_elements; }
     ID3D11Device* GetDevice() const { return m_d3d_device; }
+    HWND GetMainHwnd() const { return m_hwnd; }
 
 private:
     Manager() = default;
-    ~Manager() = default;
+    ~Manager();
 
     HWND m_hwnd = nullptr;
     IDXGISwapChain* m_swap_chain = nullptr;
@@ -391,9 +420,16 @@ private:
     bool m_auto_topmost = false;
     bool m_has_outside_elements = false;
 
+    // Capture monitor background thread state
+    std::atomic<bool> m_monitor_running{ false };
+    std::thread m_monitor_thread;
+    std::mutex m_hidden_windows_mutex;
+    std::unordered_set<HWND> m_hidden_capture_windows;
+
     void RecalculateBounds();
     void ApplyWindowResize(int width, int height);
     void UpdateFloatingOverlays(float delta_time);
+    void CaptureMonitorLoop(uint32_t poll_interval_ms);
 };
 
 } // namespace ImOverlay
