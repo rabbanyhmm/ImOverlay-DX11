@@ -1116,7 +1116,8 @@ LRESULT CALLBACK Window::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
     }
 
     case WM_ENTERSIZEMOVE:
-        ::SetTimer(hWnd, 1002, 15, nullptr); // Render continuously during window drag
+        ::timeBeginPeriod(1);
+        ::SetTimer(hWnd, 1002, 1, nullptr); // 1ms high-frequency timer for ultra-smooth 100+ FPS drag
         return 0;
 
     case WM_TIMER:
@@ -1127,14 +1128,28 @@ LRESULT CALLBACK Window::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
         }
         break;
 
+    case WM_EXITSIZEMOVE:
+        ::KillTimer(hWnd, 1002);
+        ::timeEndPeriod(1);
+        return 0;
+
     case WM_MOVING:
-        // Feature 2: Magnetic snapping - lParam is LPRECT, modify in-place
         if (self && self->m_config.enable_snap)
         {
             RECT* prc = reinterpret_cast<RECT*>(lParam);
             if (prc) self->SnapWindowPosition(*prc);
         }
-        // fall-through to WM_MOVE to update position state
+        if (self)
+        {
+            RECT* prc = reinterpret_cast<RECT*>(lParam);
+            if (prc)
+            {
+                self->m_current_screen_pos = ImVec2((float)prc->left, (float)prc->top);
+                self->Render();
+            }
+        }
+        return 0;
+
     case WM_MOVE:
         if (self)
         {
@@ -1149,14 +1164,12 @@ LRESULT CALLBACK Window::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
             {
                 auto* child = Manager::Get().GetFloatingOverlay(child_id);
                 if (child && child->GetConfig().follow_parent_movement)
+                {
                     child->OnParentMoved(rc.left, rc.top);
+                }
             }
             self->Render();
         }
-        return 0;
-
-    case WM_EXITSIZEMOVE:
-        ::KillTimer(hWnd, 1002);
         return 0;
 
     case WM_DESTROY:
