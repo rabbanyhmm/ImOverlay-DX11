@@ -1123,6 +1123,7 @@ LRESULT CALLBACK Window::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
     case WM_TIMER:
         if (wParam == 1002 && self)
         {
+            Manager::Get().TickGlobalFrame();
             self->Render();
             return 0;
         }

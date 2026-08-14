@@ -461,6 +461,14 @@ public:
     void SetD3DObjects(IDXGISwapChain* swap_chain, ID3D11Device* device, ID3D11RenderTargetView** rtv);
     void SetDXGIFactory(IDXGIFactory* factory) { m_dxgi_factory = factory; }
 
+    using GlobalFrameCallback = std::function<void()>;
+    void SetGlobalFrameCallback(GlobalFrameCallback cb) { m_global_frame_cb = cb; }
+    void TickGlobalFrame()
+    {
+        if (m_global_frame_cb)
+            m_global_frame_cb();
+    }
+
     // Configuration
     void SetPadding(float uniform_padding)
     {
@@ -679,6 +687,7 @@ private:
     std::thread    m_hotkey_thread;
     HWND           m_hotkey_hwnd = nullptr;
     std::atomic<bool> m_hotkey_running{ false };
+    GlobalFrameCallback m_global_frame_cb = nullptr;
 
     void HotkeyMessageLoop();
     void DispatchHotkeyAction(const HotkeyEntry& entry);
