@@ -277,8 +277,11 @@ void Window::InitWindow(IDXGIFactory* factory)
 
     MARGINS margins = { -1 };
     ::DwmExtendFrameIntoClientArea(m_hwnd, &margins);
-    BYTE byte_alpha = (BYTE)(m_alpha * 255.f);
-    ::SetLayeredWindowAttributes(m_hwnd, 0, byte_alpha, LWA_ALPHA);
+    if (m_alpha < 1.0f)
+    {
+        BYTE byte_alpha = (BYTE)(m_alpha * 255.f);
+        ::SetLayeredWindowAttributes(m_hwnd, 0, byte_alpha, LWA_ALPHA);
+    }
 
     // Screen Capture Exclusion (Streamer Mode)
     if (m_config.exclude_from_capture && m_hwnd)
