@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
 
 # 🎯 ImOverlay-DX11
 
@@ -306,3 +306,16 @@ See [`examples/minimal_demo/`](examples/minimal_demo/) for a complete ~100-line 
 ## 📜 License
 
 MIT License — © 2026 [rabbanyhmm](https://github.com/rabbanyhmm)
+
+---
+
+<div align="center">
+
+### 💖 Support & Community
+
+If you find **ImOverlay-DX11** useful, consider giving it a ⭐ on [GitHub](https://github.com/rabbanyhmm/ImOverlay-DX11)!
+
+<sub>Developed with ❤️ by <a href="https://github.com/rabbanyhmm">rabbanyhmm</a></sub>
+
+</div>
+
