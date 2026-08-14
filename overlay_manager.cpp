@@ -880,9 +880,17 @@ void Window::Render()
     if (!ctx)
         return;
 
-    // Use an ImDrawList initialized with the active main context font atlas & shared data
-    ImDrawList draw_list(ImGui::GetDrawListSharedData());
+    ImDrawListSharedData* shared_data = ImGui::GetDrawListSharedData();
+    if (!shared_data)
+        return;
+
+    // Ensure circle tessellation table is initialized
+    if (shared_data->CircleSegmentMaxError <= 0.0f)
+        shared_data->SetCircleTessellationMaxError(0.30f);
+
+    ImDrawList draw_list(shared_data);
     draw_list._ResetForNewFrame();
+    draw_list.Flags = shared_data->InitialFlags;
     draw_list.PushTextureID(ImGui::GetIO().Fonts->TexID);
     draw_list.PushClipRect(ImVec2(0.f, 0.f), m_window_size, false);
 
@@ -939,17 +947,20 @@ void Window::RenderBuiltinProgress(ImDrawList* draw_list)
 {
     if (!draw_list)
         return;
+
     ImVec2 p(m_config.padding.x, m_config.padding.y);
     ImVec2 s = m_config.size;
     ImVec2 max_pt(p.x + s.x, p.y + s.y);
 
+    float card_radius = (std::clamp)(m_config.corner_radius, 0.0f, (std::min)(s.x, s.y) * 0.5f);
+
     if (m_config.draw_default_card_bg)
     {
         // bg
-        draw_list->AddRectFilled(p, max_pt, m_config.custom_bg_color, m_config.corner_radius);
+        draw_list->AddRectFilled(p, max_pt, m_config.custom_bg_color, card_radius);
 
         // border
-        draw_list->AddRect(p, max_pt, m_config.custom_border_color, m_config.corner_radius, 0, m_config.border_thickness);
+        draw_list->AddRect(p, max_pt, m_config.custom_border_color, card_radius, 0, m_config.border_thickness);
     }
 
     ImFont* font = m_config.custom_font ? m_config.custom_font : ImGui::GetFont();
@@ -959,7 +970,7 @@ void Window::RenderBuiltinProgress(ImDrawList* draw_list)
         // --- Standalone Toast Notification Rendering ---
         // Left accent bar
         ImVec2 bar_max(p.x + 4.f, max_pt.y);
-        draw_list->AddRectFilled(p, bar_max, m_config.custom_accent_color, m_config.corner_radius, ImDrawFlags_RoundCornersLeft);
+        draw_list->AddRectFilled(p, bar_max, m_config.custom_accent_color, card_radius, ImDrawFlags_RoundCornersLeft);
 
         // Title
         ImVec2 label_pos(p.x + 16.f, p.y + 12.f);
@@ -982,8 +993,8 @@ void Window::RenderBuiltinProgress(ImDrawList* draw_list)
             float countdown = std::clamp(1.0f - (m_time_alive / m_config.duration_seconds), 0.0f, 1.0f);
             float track_w = s.x - 28.f;
             ImVec2 bar_pos(p.x + 14.f, max_pt.y - 5.f);
-            draw_list->AddRectFilled(bar_pos, ImVec2(bar_pos.x + track_w, bar_pos.y + 2.f), m_config.custom_track_color, 2.f);
-            draw_list->AddRectFilled(bar_pos, ImVec2(bar_pos.x + track_w * countdown, bar_pos.y + 2.f), m_config.custom_accent_color, 2.f);
+            draw_list->AddRectFilled(bar_pos, ImVec2(bar_pos.x + track_w, bar_pos.y + 2.f), m_config.custom_track_color, 1.f);
+            draw_list->AddRectFilled(bar_pos, ImVec2(bar_pos.x + track_w * countdown, bar_pos.y + 2.f), m_config.custom_accent_color, 1.f);
         }
     }
     else
@@ -1012,14 +1023,14 @@ void Window::RenderBuiltinProgress(ImDrawList* draw_list)
         else
             draw_list->AddText(prog_pos, m_config.custom_accent_color, prog.c_str());
 
-        // Progress Bar Track & Dynamic Fill
+        // Progress Bar Track & Dynamic Fill (height = 4px, rounding = 2px)
         ImVec2 prog_bar_pos(p.x + 16.f, p.y + 38.f);
         float track_w = s.x - 32.f;
         ImVec2 prog_bar_size(track_w, 4.f);
         ImVec2 prog_bar_size_dynamic(4.f + (track_w - 4.f) * m_progress, 4.f);
 
-        draw_list->AddRectFilled(prog_bar_pos, ImVec2(prog_bar_pos.x + prog_bar_size.x, prog_bar_pos.y + prog_bar_size.y), m_config.custom_track_color, 512.f);
-        draw_list->AddRectFilled(prog_bar_pos, ImVec2(prog_bar_pos.x + prog_bar_size_dynamic.x, prog_bar_pos.y + prog_bar_size_dynamic.y), m_config.custom_accent_color, 512.f);
+        draw_list->AddRectFilled(prog_bar_pos, ImVec2(prog_bar_pos.x + prog_bar_size.x, prog_bar_pos.y + prog_bar_size.y), m_config.custom_track_color, 2.0f);
+        draw_list->AddRectFilled(prog_bar_pos, ImVec2(prog_bar_pos.x + prog_bar_size_dynamic.x, prog_bar_pos.y + prog_bar_size_dynamic.y), m_config.custom_accent_color, 2.0f);
     }
 }
 
