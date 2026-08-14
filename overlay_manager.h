@@ -329,6 +329,7 @@ public:
 
     void SetSize(int width, int height);
     ImVec2 GetSize() const { return m_config.size; }
+    ImVec2 GetWindowSize() const { return m_window_size; }
 
     void SetAnchor(AnchorMode anchor, const ImVec2& margin = ImVec2(24.f, 24.f));
     void SetOpacity(float alpha);
@@ -594,6 +595,9 @@ public:
     ImVec2 GetMenuSize() const { return m_menu_size; }
     ImVec2 GetMenuLocalPos() const { return ImVec2(m_padding.x, m_padding.y); }
     ImVec4 GetPadding() const { return m_padding; }
+    float GetTargetWidth() const { return m_target_width; }
+    float GetTargetHeight() const { return m_target_height; }
+    ImVec2 GetTargetSize() const { return ImVec2(m_target_width, m_target_height); }
     bool HasActiveOutsideElements() const { return m_has_outside_elements; }
     ID3D11Device* GetDevice() const { return m_d3d_device; }
     HWND GetMainHwnd() const { return m_hwnd; }

@@ -33,6 +33,7 @@
 #include "overlay_manager.h"
 #include "backends/imgui_impl_dx11.h"
 #include "backends/imgui_impl_win32.h"
+#include <iostream>
 #include <dwmapi.h>
 #include <algorithm>
 #include <cmath>
@@ -1118,6 +1119,12 @@ LRESULT CALLBACK Window::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
     case WM_ENTERSIZEMOVE:
         ::timeBeginPeriod(1);
         ::SetTimer(hWnd, 1002, 1, nullptr); // 1ms high-frequency timer for ultra-smooth 100+ FPS drag
+        if (self)
+        {
+            std::cout << "[OVERLAY DRAG START] ID: " << self->GetId()
+                      << " | Size: (" << self->GetWindowSize().x << " x " << self->GetWindowSize().y << ")"
+                      << " | Pos: (" << self->GetPosition().x << ", " << self->GetPosition().y << ")" << std::endl;
+        }
         return 0;
 
     case WM_TIMER:
@@ -1132,6 +1139,11 @@ LRESULT CALLBACK Window::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
     case WM_EXITSIZEMOVE:
         ::KillTimer(hWnd, 1002);
         ::timeEndPeriod(1);
+        if (self)
+        {
+            std::cout << "[OVERLAY DRAG END] ID: " << self->GetId()
+                      << " | Final Pos: (" << self->GetPosition().x << ", " << self->GetPosition().y << ")" << std::endl;
+        }
         return 0;
 
     case WM_MOVING:
@@ -1146,6 +1158,9 @@ LRESULT CALLBACK Window::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
             if (prc)
             {
                 self->m_current_screen_pos = ImVec2((float)prc->left, (float)prc->top);
+                std::cout << "[OVERLAY DRAG] ID: " << self->GetId()
+                          << " | Screen Pos: (" << prc->left << ", " << prc->top << ")"
+                          << " | Bounds: (" << (prc->right - prc->left) << " x " << (prc->bottom - prc->top) << ")" << std::endl;
             }
         }
         return 0;
@@ -1499,6 +1514,8 @@ void Manager::ApplyWindowResize(int width, int height)
 {
     if (!m_hwnd || width <= 0 || height <= 0)
         return;
+
+    std::cout << "[MAIN OVERLAY RESIZE] Applying new physical size: " << width << " x " << height << std::endl;
 
     // Expand the physical Win32 OS window
     ::SetWindowPos(
