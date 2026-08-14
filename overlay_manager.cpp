@@ -127,18 +127,6 @@ Window::~Window()
         m_swap_chain->Release();
         m_swap_chain = nullptr;
     }
-    if (m_imgui_context)
-    {
-        ImGuiContext* prev_ctx = ImGui::GetCurrentContext();
-        if (prev_ctx == m_imgui_context)
-            ImGui::SetCurrentContext(nullptr);
-        m_imgui_context->IO.BackendRendererUserData = nullptr;
-        m_imgui_context->IO.BackendPlatformUserData = nullptr;
-        ImGui::DestroyContext(m_imgui_context);
-        m_imgui_context = nullptr;
-        if (prev_ctx && prev_ctx != m_imgui_context)
-            ImGui::SetCurrentContext(prev_ctx);
-    }
     if (m_hwnd)
     {
         ::DestroyWindow(m_hwnd);
@@ -366,9 +354,6 @@ void Window::InitWindow(IDXGIFactory* factory)
     if (m_config.enable_acrylic_blur)
         ApplyAcrylicEffect();
 
-    // Feature 4: Create per-window ImGui context if requested
-    if (m_config.enable_imgui_context)
-        SetupImGuiContext();
 
     if (!m_config.start_hidden)
     {
@@ -511,29 +496,6 @@ void Window::SnapWindowPosition(RECT& rc)
     rc.right  = (LONG)(x + w); rc.bottom = (LONG)(y + h);
 }
 
-// ============================================================================
-// Feature 4: Per-Window ImGui Context
-// ============================================================================
-
-void Window::SetupImGuiContext()
-{
-    if (m_imgui_context || !m_hwnd || !m_device) return;
-    ImGuiContext* prev_ctx = ImGui::GetCurrentContext();
-    ImFontAtlas* shared_atlas = prev_ctx ? prev_ctx->IO.Fonts : nullptr;
-    m_imgui_context = ImGui::CreateContext(shared_atlas);
-    ImGui::SetCurrentContext(m_imgui_context);
-    ImGuiIO& io = ImGui::GetIO();
-    io.DisplaySize = ImVec2(m_window_size.x, m_window_size.y);
-    io.IniFilename = nullptr;
-    io.LogFilename = nullptr;
-    if (prev_ctx)
-    {
-        io.BackendRendererUserData = prev_ctx->IO.BackendRendererUserData;
-        io.BackendRendererName     = prev_ctx->IO.BackendRendererName;
-        io.BackendFlags            = prev_ctx->IO.BackendFlags;
-        ImGui::SetCurrentContext(prev_ctx);
-    }
-}
 
 void Window::Show(bool cascade_to_children)
 {
@@ -914,39 +876,41 @@ void Window::Render()
     if (!m_is_alive || !m_swap_chain || !m_rtv || !IsVisible() || !m_device)
         return;
 
-    if (!m_imgui_context)
-    {
-        SetupImGuiContext();
-        if (!m_imgui_context)
-            return;
-    }
+    ImGuiContext* ctx = ImGui::GetCurrentContext();
+    if (!ctx)
+        return;
 
-    ImGuiContext* prev_ctx = ImGui::GetCurrentContext();
-    if (prev_ctx)
-    {
-        m_imgui_context->IO.BackendRendererUserData = prev_ctx->IO.BackendRendererUserData;
-        m_imgui_context->IO.BackendRendererName     = prev_ctx->IO.BackendRendererName;
-        m_imgui_context->IO.BackendFlags            = prev_ctx->IO.BackendFlags;
-    }
-
-    ImGui::SetCurrentContext(m_imgui_context);
-
-    ImGuiIO& io = ImGui::GetIO();
-    io.DisplaySize = m_window_size;
-    io.DeltaTime = prev_ctx ? prev_ctx->IO.DeltaTime : 0.016f;
-
-    ImGui::NewFrame();
+    // Use an ImDrawList initialized with the active main context font atlas & shared data
+    ImDrawList draw_list(ImGui::GetDrawListSharedData());
+    draw_list._ResetForNewFrame();
+    draw_list.PushTextureID(ImGui::GetIO().Fonts->TexID);
+    draw_list.PushClipRect(ImVec2(0.f, 0.f), m_window_size, false);
 
     if (m_render_callback)
     {
-        m_render_callback(this, io.DeltaTime);
+        m_render_callback(this, ctx->IO.DeltaTime);
     }
     else
     {
-        RenderBuiltinProgress();
+        RenderBuiltinProgress(&draw_list);
     }
 
-    ImGui::Render();
+    draw_list.PopClipRect();
+    draw_list.PopTextureID();
+
+    if (draw_list.VtxBuffer.Size == 0 || draw_list.CmdBuffer.Size == 0)
+        return;
+
+    ImDrawData draw_data;
+    draw_data.Valid = true;
+    draw_data.CmdLists.push_back(&draw_list);
+    draw_data.CmdListsCount = 1;
+    draw_data.TotalVtxCount = draw_list.VtxBuffer.Size;
+    draw_data.TotalIdxCount = draw_list.IdxBuffer.Size;
+    draw_data.DisplayPos = ImVec2(0.f, 0.f);
+    draw_data.DisplaySize = m_window_size;
+    draw_data.FramebufferScale = ImVec2(1.f, 1.f);
+    draw_data.OwnerViewport = nullptr;
 
     ID3D11DeviceContext* context = nullptr;
     m_device->GetImmediateContext(&context);
@@ -965,18 +929,16 @@ void Window::Render()
         vp.TopLeftY = 0;
         context->RSSetViewports(1, &vp);
 
-        ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+        ImGui_ImplDX11_RenderDrawData(&draw_data);
         m_swap_chain->Present(1, 0);
         context->Release();
     }
-
-    if (prev_ctx)
-        ImGui::SetCurrentContext(prev_ctx);
 }
 
-void Window::RenderBuiltinProgress()
+void Window::RenderBuiltinProgress(ImDrawList* draw_list)
 {
-    ImDrawList* draw_list = ImGui::GetForegroundDrawList();
+    if (!draw_list)
+        return;
     ImVec2 p(m_config.padding.x, m_config.padding.y);
     ImVec2 s = m_config.size;
     ImVec2 max_pt(p.x + s.x, p.y + s.y);

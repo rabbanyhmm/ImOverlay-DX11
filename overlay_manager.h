@@ -396,11 +396,10 @@ public:
 private:
     void InitWindow(IDXGIFactory* factory);
     void CalculateScreenPosition(const ImVec2& margin = ImVec2(24.f, 24.f));
-    void RenderBuiltinProgress();
+    void RenderBuiltinProgress(ImDrawList* draw_list);
     void ResizeBuffers(int width, int height);
     void ApplyAcrylicEffect();          // Feature 1: DWM blur/acrylic setup
     void SnapWindowPosition(RECT& rc);  // Feature 2: magnetic snap, modifies RECT in WM_MOVING
-    void SetupImGuiContext();           // Feature 4: create per-window ImGuiContext
 
     std::string m_id;
     HWND m_hwnd = nullptr;
