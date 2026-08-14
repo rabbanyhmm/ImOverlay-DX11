@@ -448,11 +448,20 @@ public:
     // Configuration
     void SetPadding(float uniform_padding)
     {
-        m_padding = ImVec4(uniform_padding, uniform_padding, uniform_padding, uniform_padding);
+        SetPadding(uniform_padding, uniform_padding, uniform_padding, uniform_padding);
     }
     void SetPadding(float left, float top, float right, float bottom)
     {
         m_padding = ImVec4(left, top, right, bottom);
+        m_target_width = m_menu_size.x + m_padding.x + m_padding.z;
+        m_target_height = m_menu_size.y + m_padding.y + m_padding.w;
+        ImRect menu_rect(
+            m_padding.x,
+            m_padding.y,
+            m_padding.x + m_menu_size.x,
+            m_padding.y + m_menu_size.y
+        );
+        RegisterElementRect("main_menu", menu_rect, true);
     }
     void SetTransitionMode(TransitionMode mode, float speed = 14.0f)
     {

@@ -1098,6 +1098,7 @@ Manager::~Manager()
 
 void Manager::Init(HWND hwnd, const ImVec2& initial_pos, const ImVec2& menu_size)
 {
+    (void)initial_pos;
     m_hwnd = hwnd;
     m_menu_size = menu_size;
     m_target_width = menu_size.x + m_padding.x + m_padding.z;
@@ -1105,12 +1106,12 @@ void Manager::Init(HWND hwnd, const ImVec2& initial_pos, const ImVec2& menu_size
     m_current_width = m_target_width;
     m_current_height = m_target_height;
 
-    // Register the main menu base rectangle
+    // Register the main menu base rectangle in local window client coordinates
     ImRect menu_rect(
-        initial_pos.x + m_padding.x,
-        initial_pos.y + m_padding.y,
-        initial_pos.x + m_padding.x + menu_size.x,
-        initial_pos.y + m_padding.y + menu_size.y
+        m_padding.x,
+        m_padding.y,
+        m_padding.x + menu_size.x,
+        m_padding.y + menu_size.y
     );
     RegisterElementRect("main_menu", menu_rect, true);
 }
