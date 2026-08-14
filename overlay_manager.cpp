@@ -127,16 +127,15 @@ Window::~Window()
         m_swap_chain->Release();
         m_swap_chain = nullptr;
     }
-    // Feature 4: Destroy per-window ImGui context if it exists
     if (m_imgui_context)
     {
         ImGuiContext* prev_ctx = ImGui::GetCurrentContext();
-        ImGui::SetCurrentContext(m_imgui_context);
-        ImGui_ImplDX11_Shutdown();
-        ImGui_ImplWin32_Shutdown();
+        if (prev_ctx == m_imgui_context)
+            ImGui::SetCurrentContext(nullptr);
         ImGui::DestroyContext(m_imgui_context);
         m_imgui_context = nullptr;
-        if (prev_ctx != m_imgui_context) ImGui::SetCurrentContext(prev_ctx);
+        if (prev_ctx && prev_ctx != m_imgui_context)
+            ImGui::SetCurrentContext(prev_ctx);
     }
     if (m_hwnd)
     {
@@ -518,17 +517,15 @@ void Window::SetupImGuiContext()
 {
     if (m_imgui_context || !m_hwnd || !m_device) return;
     ImGuiContext* prev_ctx = ImGui::GetCurrentContext();
-    m_imgui_context = ImGui::CreateContext(ImGui::GetIO().Fonts);
+    ImFontAtlas* shared_atlas = prev_ctx ? prev_ctx->IO.Fonts : nullptr;
+    m_imgui_context = ImGui::CreateContext(shared_atlas);
     ImGui::SetCurrentContext(m_imgui_context);
     ImGuiIO& io = ImGui::GetIO();
     io.DisplaySize = ImVec2(m_window_size.x, m_window_size.y);
     io.IniFilename = nullptr;
-    ImGui_ImplWin32_Init(m_hwnd);
-    ID3D11DeviceContext* ctx = nullptr;
-    m_device->GetImmediateContext(&ctx);
-    ImGui_ImplDX11_Init(m_device, ctx);
-    if (ctx) ctx->Release();
-    ImGui::SetCurrentContext(prev_ctx);
+    io.LogFilename = nullptr;
+    if (prev_ctx)
+        ImGui::SetCurrentContext(prev_ctx);
 }
 
 void Window::Show(bool cascade_to_children)
