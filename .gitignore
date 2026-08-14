@@ -1,0 +1,26 @@
+﻿# Build outputs
+*.exe
+*.obj
+*.pdb
+*.lib
+*.exp
+*.ilk
+*.iobj
+*.ipdb
+Release/
+Debug/
+x64/
+x86/
+.vs/
+*.user
+*.suo
+*.aps
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# IDE files
+*.sln.docstates
+.idea/
+*.code-workspace

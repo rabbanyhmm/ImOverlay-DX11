@@ -1,3 +1,18 @@
+//     ___           ___                 _               ____  _  ___ _
+//    |_ _|  _ __   / _ \__   _____ _ __| | __ _ _   _  |  _ \\ \/ / / |
+//     | |  | '_ \ | | | \ \ / / _ \ '__| |/ _` | | | | | | | |\  /| | |
+//     | |  | | | || |_| |\ V /  __/ |  | | (_| | |_| | | |_| |/  \| | |
+//    |___|  |_| |_| \___/  \_/ \___|_|  |_|\__,_|\__, | |____//_/\_\_|_|
+//                                                 |___/
+//
+//  ImOverlay-DX11 — Implementation
+//  https://github.com/rabbanyhmm/ImOverlay-DX11
+//
+//  SPDX-FileCopyrightText: 2026 rabbanyhmm <https://github.com/rabbanyhmm>
+//  SPDX-License-Identifier: MIT
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include "overlay_manager.h"
 #include "backends/imgui_impl_dx11.h"
 #include "backends/imgui_impl_win32.h"

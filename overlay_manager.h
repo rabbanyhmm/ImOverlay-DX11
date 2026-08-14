@@ -1,4 +1,27 @@
+//     ___           ___                 _               ____  _  ___ _
+//    |_ _|  _ __   / _ \__   _____ _ __| | __ _ _   _  |  _ \\ \/ / / |
+//     | |  | '_ \ | | | \ \ / / _ \ '__| |/ _` | | | | | | | |\  /| | |
+//     | |  | | | || |_| |\ V /  __/ |  | | (_| | |_| | | |_| |/  \| | |
+//    |___|  |_| |_| \___/  \_/ \___|_|  |_|\__,_|\__, | |____//_/\_\_|_|
+//                                                 |___/
+//
+//  Hardware-Accelerated Desktop Overlay & Multi-Window Framework
+//  Built on Dear ImGui + Direct3D 11 for Windows 10/11
+//
+//  version 1.0.0
+//  https://github.com/rabbanyhmm/ImOverlay-DX11
+//
+//  SPDX-FileCopyrightText: 2026 rabbanyhmm <https://github.com/rabbanyhmm>
+//  SPDX-License-Identifier: MIT
 #pragma once
+
+// ============================================================================
+// Version
+// ============================================================================
+#define IMOVERLAY_VERSION       "1.0.0"
+#define IMOVERLAY_VERSION_MAJOR 1
+#define IMOVERLAY_VERSION_MINOR 0
+#define IMOVERLAY_VERSION_PATCH 0
 
 // ============================================================================
 // ImOverlay-DX11: Hardware-Accelerated Desktop Overlay & Multi-Window Framework
@@ -424,10 +447,6 @@ public:
     size_t GetToastCount() const;
 
     // Legacy — redirects to PushToast
-    [[deprecated("Use PushToast() instead for stacking support")]]
-    void ShowDetachedToast(const std::string& title, const std::string& message,
-                           const Config& config = {});
-
     // =========================================================================
     // Feature 5: Global Hotkey Listener
     // Spawns a message-only HWND on a background thread; thread-safe.
