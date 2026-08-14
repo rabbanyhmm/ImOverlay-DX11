@@ -1,0 +1,409 @@
+#pragma once
+
+// ============================================================================
+// ImOverlay-DX11: Hardware-Accelerated Desktop Overlay & Multi-Window Framework
+// Repository: https://github.com/rabbanyhmm/ImOverlay-DX11.git
+// License: MIT
+// ============================================================================
+
+#include <windows.h>
+#include <d3d11.h>
+#include <dxgi.h>
+#include <string>
+#include <vector>
+#include <unordered_map>
+#include <memory>
+#include <functional>
+#include "imgui.h"
+#include "imgui_internal.h"
+
+#if defined(_MSC_VER)
+#pragma comment(lib, "d3d11.lib")
+#pragma comment(lib, "dxgi.lib")
+#pragma comment(lib, "d3dcompiler.lib")
+#pragma comment(lib, "dwmapi.lib")
+#endif
+
+namespace ImOverlay
+{
+
+// ============================================================================
+// Enums & Structs
+// ============================================================================
+
+enum class TransitionMode
+{
+    Smooth, // Smooth exponential interpolation on window resizing
+    Instant // Instantaneous window resize
+};
+
+enum class AnchorMode
+{
+    Relative,               // Relative to main menu
+    RelativeToParentWindow, // Relative to a specified parent window
+    Screen_TopLeft,         // Fixed at screen top-left
+    Screen_TopRight,        // Fixed at screen top-right
+    Screen_BottomLeft,      // Fixed at screen bottom-left
+    Screen_BottomRight,     // Fixed at screen bottom-right
+    Screen_Center,          // Fixed at screen center
+    Screen_Absolute         // Fixed at absolute screen coordinates
+};
+
+struct Element
+{
+    std::string name;
+    ImRect rect;                // Screen-space bounding box
+    bool is_interactive = true; // True if it receives clicks, false if click-through
+    bool is_active = true;      // Current visibility state
+};
+
+struct Config
+{
+    std::string window_title = "ImOverlay Window";     // OS Window Title (shows in Taskbar/Alt+Tab)
+    std::string parent_id = "main_menu";               // Parent window ID ("main_menu", overlay ID, or "" for root)
+    AnchorMode anchor = AnchorMode::Screen_BottomRight;
+    ImVec2 custom_pos = ImVec2(0.f, 0.f);               // Used if AnchorMode::Screen_Absolute
+    ImVec2 offset_from_parent = ImVec2(0.f, 0.f);       // Used if AnchorMode::RelativeToParentWindow
+    ImVec2 size = ImVec2(340.f, 80.f);                  // Window dimensions
+    ImVec4 padding = ImVec4(16.f, 16.f, 16.f, 16.f);    // Transparent margin buffer
+
+    bool is_topmost = true;             // Stay above full-screen games/apps (HWND_TOPMOST)
+    bool hide_from_taskbar = true;      // Hide from taskbar and Alt+Tab (WS_EX_TOOLWINDOW)
+    bool is_movable = true;             // Draggable anywhere by user (HTCAPTION)
+    bool is_click_through = false;      // Visual-only click-through toggle
+    bool start_hidden = false;          // Create window initially hidden
+    bool start_minimized = false;       // Create window initially minimized
+
+    // Hierarchy & Cascade Behavior
+    bool close_with_parent = true;      // Auto-close when parent window closes
+    bool hide_with_parent = true;       // Auto-hide when parent window hides
+    bool minimize_with_parent = true;   // Auto-minimize when parent window minimizes
+    bool follow_parent_movement = true; // Sub-window follows parent position when parent is dragged
+
+    // Hit-Testing Regions
+    std::vector<ImRect> clickable_regions; // Specific clickable hitboxes (e.g. buttons only)
+    std::vector<ImRect> drag_regions;      // Specific drag header/caption hitboxes (empty = whole body draggable)
+
+    // Lifetime & Timing
+    float duration_seconds = -1.0f;     // -1 = permanent window, > 0 = auto-dismiss after seconds
+    bool auto_dismiss_on_finish = true; // Auto-close after task/progress completes
+    float finish_dismiss_delay = 2.0f;  // Delay in seconds before closing after hitting 100%
+    float initial_opacity = 1.0f;       // Base opacity 0.0f - 1.0f
+
+    // Visual Customization & Styling
+    float corner_radius = 16.0f;        // Border radius
+    bool draw_default_card_bg = true;   // Draw glassmorphism background rect
+    ImU32 custom_bg_color = IM_COL32(18, 18, 20, 240);       // Dark glass background
+    ImU32 custom_border_color = IM_COL32(255, 255, 255, 30);  // Subtle glass border
+    ImU32 custom_accent_color = IM_COL32(138, 143, 255, 255); // Default accent/primary color
+    ImU32 custom_text_color = IM_COL32(255, 255, 255, 255);   // White text
+    ImU32 custom_track_color = IM_COL32(255, 255, 255, 12);   // Progress track
+    float border_thickness = 1.0f;      // Border outline thickness
+    bool enable_acrylic_blur = false;   // Optional DWM blur behind window
+
+    // Optional Font Pointers (if null, uses default ImGui font)
+    ImFont* custom_font = nullptr;
+    ImFont* custom_icon_font = nullptr;
+};
+
+// ============================================================================
+// Window Class (Secondary Windows & Detached Overlays)
+// ============================================================================
+
+class Window
+{
+public:
+    using RenderCallback = std::function<void(Window* window, float delta_time)>;
+    using EventCallback = std::function<void(Window* window)>;
+    using MoveCallback = std::function<void(Window* window, int x, int y)>;
+    using ResizeCallback = std::function<void(Window* window, int w, int h)>;
+
+    Window(const std::string& id, ID3D11Device* device, IDXGIFactory* factory,
+           const Config& config);
+    ~Window();
+
+    // Custom UI Rendering Logic
+    void SetRenderCallback(RenderCallback callback) { m_render_callback = callback; }
+
+    // Progress State (for built-in progress card renderer)
+    void SetProgressData(const std::string& title, const std::string& icon, float progress)
+    {
+        m_title = title;
+        m_icon = icon;
+        m_progress = progress;
+    }
+
+    void SetAutoDismissOnFinish(bool enable, float delay_seconds = 2.0f)
+    {
+        m_config.auto_dismiss_on_finish = enable;
+        m_config.finish_dismiss_delay = delay_seconds;
+    }
+    bool IsFinished() const { return m_progress >= 1.0f; }
+    float GetFinishTimer() const { return m_finish_timer; }
+
+    // Frame Lifecycle
+    bool Update(float delta_time);
+    void Render();
+
+    // --- Window Visibility & State Controls ---
+    void Show(bool cascade_to_children = true);
+    void Hide(bool cascade_to_children = true);
+    void SetVisible(bool visible, bool cascade_to_children = true);
+    bool IsVisible() const;
+
+    void Minimize(bool cascade_to_children = true);
+    void Maximize();
+    void Restore(bool cascade_to_children = true);
+    bool IsMinimized() const;
+    bool IsMaximized() const;
+
+    // --- Per-Window Configuration & Modifiers ---
+    void SetWindowTitle(const std::string& title);
+    const std::string& GetWindowTitle() const { return m_config.window_title; }
+
+    void SetTopmost(bool topmost);
+    bool IsTopmost() const { return m_config.is_topmost; }
+
+    void SetTaskbarVisible(bool visible);
+    bool IsTaskbarVisible() const { return !m_config.hide_from_taskbar; }
+
+    void SetClickThrough(bool click_through);
+    bool IsClickThrough() const { return m_config.is_click_through; }
+
+    void SetMovable(bool movable) { m_config.is_movable = movable; }
+    bool IsMovable() const { return m_config.is_movable; }
+
+    void SetPosition(int x, int y);
+    ImVec2 GetPosition() const { return m_current_screen_pos; }
+
+    void SetSize(int width, int height);
+    ImVec2 GetSize() const { return m_config.size; }
+
+    void SetAnchor(AnchorMode anchor, const ImVec2& margin = ImVec2(24.f, 24.f));
+    void SetOpacity(float alpha);
+    float GetOpacity() const { return m_alpha; }
+
+    void SetDuration(float seconds) { m_config.duration_seconds = seconds; }
+    void SetClickableRegions(const std::vector<ImRect>& regions) { m_config.clickable_regions = regions; }
+    void SetDragRegions(const std::vector<ImRect>& regions) { m_config.drag_regions = regions; }
+    void SetCornerRadius(float radius) { m_config.corner_radius = radius; }
+    void SetCustomColors(ImU32 bg, ImU32 border, ImU32 accent = IM_COL32(138, 143, 255, 255), float thickness = 1.0f)
+    {
+        m_config.custom_bg_color = bg;
+        m_config.custom_border_color = border;
+        m_config.custom_accent_color = accent;
+        m_config.border_thickness = thickness;
+    }
+    void SetFonts(ImFont* text_font, ImFont* icon_font = nullptr)
+    {
+        m_config.custom_font = text_font;
+        m_config.custom_icon_font = icon_font;
+    }
+
+    // --- Parent / Child Hierarchy Management ---
+    void SetParentId(const std::string& parent_id) { m_config.parent_id = parent_id; }
+    const std::string& GetParentId() const { return m_config.parent_id; }
+
+    void AddChild(const std::string& child_id);
+    void RemoveChild(const std::string& child_id);
+    const std::vector<std::string>& GetChildren() const { return m_child_ids; }
+    bool HasChildren() const { return !m_child_ids.empty(); }
+
+    void OnParentMoved(int parent_x, int parent_y);
+
+    // --- Event Callbacks ---
+    void SetOnCloseCallback(EventCallback cb) { m_on_close_cb = cb; }
+    void SetOnMoveCallback(MoveCallback cb) { m_on_move_cb = cb; }
+    void SetOnResizeCallback(ResizeCallback cb) { m_on_resize_cb = cb; }
+
+    // Smooth Close (animates out and cascades to children) vs Instant Destroy
+    void Close(bool cascade_to_children = true);
+    void DestroyNow(bool cascade_to_children = true);
+
+    // Queries
+    const std::string& GetId() const { return m_id; }
+    bool IsAlive() const { return m_is_alive; }
+    bool IsClosing() const { return m_closing; }
+    HWND GetHwnd() const { return m_hwnd; }
+    ID3D11Device* GetDevice() const { return m_device; }
+    ID3D11RenderTargetView* GetRTV() const { return m_rtv; }
+    const Config& GetConfig() const { return m_config; }
+
+    // Win32 message handling
+    static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
+private:
+    void InitWindow(IDXGIFactory* factory);
+    void CalculateScreenPosition(const ImVec2& margin = ImVec2(24.f, 24.f));
+    void RenderBuiltinProgress();
+    void ResizeBuffers(int width, int height);
+
+    std::string m_id;
+    HWND m_hwnd = nullptr;
+    ID3D11Device* m_device = nullptr;
+    IDXGIFactory* m_swap_chain_factory = nullptr;
+    IDXGISwapChain* m_swap_chain = nullptr;
+    ID3D11RenderTargetView* m_rtv = nullptr;
+
+    Config m_config;
+    ImVec2 m_window_size;
+    ImVec2 m_target_screen_pos;
+    ImVec2 m_current_screen_pos;
+
+    std::vector<std::string> m_child_ids;
+
+    bool m_is_alive = true;
+    bool m_closing = false;
+
+    float m_time_alive = 0.0f;
+    float m_alpha = 1.0f;
+    float m_anim_progress = 0.0f;
+
+    std::string m_title;
+    std::string m_icon;
+    float m_progress = 0.0f;
+    float m_finish_timer = 0.0f;
+
+    RenderCallback m_render_callback = nullptr;
+    EventCallback m_on_close_cb = nullptr;
+    MoveCallback m_on_move_cb = nullptr;
+    ResizeCallback m_on_resize_cb = nullptr;
+};
+
+// ============================================================================
+// Manager Class (Singleton)
+// ============================================================================
+
+class Manager
+{
+public:
+    static Manager& Get()
+    {
+        static Manager instance;
+        return instance;
+    }
+
+    // Initialization
+    void Init(HWND hwnd, const ImVec2& initial_pos, const ImVec2& menu_size);
+    void SetD3DObjects(IDXGISwapChain* swap_chain, ID3D11Device* device, ID3D11RenderTargetView** rtv);
+    void SetDXGIFactory(IDXGIFactory* factory) { m_dxgi_factory = factory; }
+
+    // Configuration
+    void SetPadding(float uniform_padding)
+    {
+        m_padding = ImVec4(uniform_padding, uniform_padding, uniform_padding, uniform_padding);
+    }
+    void SetPadding(float left, float top, float right, float bottom)
+    {
+        m_padding = ImVec4(left, top, right, bottom);
+    }
+    void SetTransitionMode(TransitionMode mode, float speed = 14.0f)
+    {
+        m_transition_mode = mode;
+        m_transition_speed = speed;
+    }
+
+    void SetTopmost(bool topmost);
+    bool IsTopmost() const { return m_is_topmost; }
+    void SetAutoTopmost(bool enable) { m_auto_topmost = enable; }
+
+    // Registration of expandable UI elements
+    void RegisterElement(const std::string& name, const ImVec2& pos, const ImVec2& size, bool interactive = true);
+    void RegisterRelativeElement(const std::string& name, const ImVec2& local_pos, const ImVec2& size, bool interactive = true)
+    {
+        ImVec2 screen_pos(m_padding.x + local_pos.x, m_padding.y + local_pos.y);
+        RegisterElement(name, screen_pos, size, interactive);
+    }
+    void RegisterElementRect(const std::string& name, const ImRect& rect, bool interactive = true);
+    void UnregisterElement(const std::string& name);
+    void SetElementActive(const std::string& name, bool active);
+    void SetElementInteractive(const std::string& name, bool interactive);
+
+    // Frame Lifecycle
+    void BeginFrame();
+    void EndFrame(float delta_time);
+
+    // Handle Win32 WM_NCHITTEST message
+    LRESULT HandleHitTest(LPARAM lParam);
+
+    // --- Detached Floating Overlay Windows & Hierarchy ---
+    Window* CreateFloatingOverlay(const std::string& id, const Config& config,
+                                  Window::RenderCallback callback = nullptr);
+
+    Window* CreateSubWindow(const std::string& parent_id, const std::string& child_id,
+                            const Config& config,
+                            Window::RenderCallback callback = nullptr);
+
+    Window* ShowDetachedProgress(const std::string& title, const std::string& icon,
+                                 float progress, const Config& config = {});
+
+    void ShowDetachedToast(const std::string& title, const std::string& message,
+                           const Config& config = {});
+
+    Window* GetFloatingOverlay(const std::string& id);
+    bool HasFloatingOverlay(const std::string& id) const;
+    void CloseFloatingOverlay(const std::string& id);
+    void DestroyFloatingOverlay(const std::string& id);
+    void CloseWindowHierarchy(const std::string& root_id);
+
+    void CloseAllFloatingOverlays();
+    void HideAllFloatingOverlays();
+    void ShowAllFloatingOverlays();
+    void MinimizeAllFloatingOverlays();
+    void RestoreAllFloatingOverlays();
+
+    std::vector<std::string> GetFloatingOverlayIds() const;
+    std::vector<std::string> GetChildrenOf(const std::string& parent_id) const;
+    size_t GetFloatingOverlayCount() const { return m_floating_overlays.size(); }
+
+    // Coordinates & state queries
+    ImVec2 GetMenuSize() const { return m_menu_size; }
+    ImVec2 GetMenuLocalPos() const { return ImVec2(m_padding.x, m_padding.y); }
+    ImVec4 GetPadding() const { return m_padding; }
+    bool HasActiveOutsideElements() const { return m_has_outside_elements; }
+    ID3D11Device* GetDevice() const { return m_d3d_device; }
+
+private:
+    Manager() = default;
+    ~Manager() = default;
+
+    HWND m_hwnd = nullptr;
+    IDXGISwapChain* m_swap_chain = nullptr;
+    ID3D11Device* m_d3d_device = nullptr;
+    ID3D11RenderTargetView** m_main_rtv = nullptr;
+    IDXGIFactory* m_dxgi_factory = nullptr;
+
+    ImVec2 m_menu_size = ImVec2(646.f, 458.f);
+    ImVec4 m_padding = ImVec4(26.f, 26.f, 26.f, 26.f);
+
+    std::unordered_map<std::string, Element> m_elements;
+    std::unordered_map<std::string, bool> m_click_through_overrides;
+    std::vector<std::unique_ptr<Window>> m_floating_overlays;
+
+    float m_current_height = 510.f;
+    float m_target_height = 510.f;
+    float m_current_width = 698.f;
+    float m_target_width = 698.f;
+
+    TransitionMode m_transition_mode = TransitionMode::Smooth;
+    float m_transition_speed = 14.0f;
+    bool m_is_topmost = false;
+    bool m_auto_topmost = false;
+    bool m_has_outside_elements = false;
+
+    void RecalculateBounds();
+    void ApplyWindowResize(int width, int height);
+    void UpdateFloatingOverlays(float delta_time);
+};
+
+} // namespace ImOverlay
+
+// ============================================================================
+// Global Backward-Compatible Type Aliases
+// ============================================================================
+using OverlayManager = ImOverlay::Manager;
+using FloatingOverlayWindow = ImOverlay::Window;
+using OverlayConfig = ImOverlay::Config;
+using OverlayElement = ImOverlay::Element;
+using AnchorMode = ImOverlay::AnchorMode;
+using TransitionMode = ImOverlay::TransitionMode;
