@@ -904,36 +904,70 @@ bool Window::Update(float delta_time)
     return m_is_alive;
 }
 
+
 void Window::Render()
 {
-    if (!m_is_alive || !m_swap_chain || !m_rtv || !IsVisible())
+    if (!m_is_alive || !m_swap_chain || !m_rtv || !IsVisible() || !m_device)
         return;
+
+    if (!m_imgui_context)
+    {
+        SetupImGuiContext();
+        if (!m_imgui_context)
+            return;
+    }
+
+    ImGuiContext* prev_ctx = ImGui::GetCurrentContext();
+    ImGui::SetCurrentContext(m_imgui_context);
+
+    ImGuiIO& io = ImGui::GetIO();
+    io.DisplaySize = m_window_size;
+    io.DeltaTime = prev_ctx ? prev_ctx->IO.DeltaTime : 0.016f;
+
+    ImGui_ImplDX11_NewFrame();
+    ImGui_ImplWin32_NewFrame();
+    ImGui::NewFrame();
 
     if (m_render_callback)
     {
-        m_render_callback(this, ImGui::GetIO().DeltaTime);
+        m_render_callback(this, io.DeltaTime);
     }
     else
     {
         RenderBuiltinProgress();
     }
+
+    ImGui::Render();
+
+    ID3D11DeviceContext* context = nullptr;
+    m_device->GetImmediateContext(&context);
+    if (context)
+    {
+        const float clear_color[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+        context->OMSetRenderTargets(1, &m_rtv, nullptr);
+        context->ClearRenderTargetView(m_rtv, clear_color);
+
+        D3D11_VIEWPORT vp;
+        vp.Width = m_window_size.x;
+        vp.Height = m_window_size.y;
+        vp.MinDepth = 0.0f;
+        vp.MaxDepth = 1.0f;
+        vp.TopLeftX = 0;
+        vp.TopLeftY = 0;
+        context->RSSetViewports(1, &vp);
+
+        ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+        m_swap_chain->Present(1, 0);
+        context->Release();
+    }
+
+    if (prev_ctx)
+        ImGui::SetCurrentContext(prev_ctx);
 }
 
 void Window::RenderBuiltinProgress()
 {
-    if (!ImGui::GetCurrentContext())
-        return;
-
-    ID3D11DeviceContext* context = nullptr;
-    m_device->GetImmediateContext(&context);
-    if (!context)
-        return;
-
-    ImDrawList draw_list(ImGui::GetDrawListSharedData());
-    draw_list._ResetForNewFrame();
-    draw_list.PushTextureID(ImGui::GetIO().Fonts->TexID);
-    draw_list.PushClipRect(ImVec2(0.f, 0.f), m_window_size, false);
-
+    ImDrawList* draw_list = ImGui::GetForegroundDrawList();
     ImVec2 p(m_config.padding.x, m_config.padding.y);
     ImVec2 s = m_config.size;
     ImVec2 max_pt(p.x + s.x, p.y + s.y);
@@ -941,10 +975,10 @@ void Window::RenderBuiltinProgress()
     if (m_config.draw_default_card_bg)
     {
         // bg
-        draw_list.AddRectFilled(p, max_pt, m_config.custom_bg_color, m_config.corner_radius);
+        draw_list->AddRectFilled(p, max_pt, m_config.custom_bg_color, m_config.corner_radius);
 
         // border
-        draw_list.AddRect(p, max_pt, m_config.custom_border_color, m_config.corner_radius, 0, m_config.border_thickness);
+        draw_list->AddRect(p, max_pt, m_config.custom_border_color, m_config.corner_radius, 0, m_config.border_thickness);
     }
 
     ImFont* font = m_config.custom_font ? m_config.custom_font : ImGui::GetFont();
@@ -954,22 +988,22 @@ void Window::RenderBuiltinProgress()
         // --- Standalone Toast Notification Rendering ---
         // Left accent bar
         ImVec2 bar_max(p.x + 4.f, max_pt.y);
-        draw_list.AddRectFilled(p, bar_max, m_config.custom_accent_color, m_config.corner_radius, ImDrawFlags_RoundCornersLeft);
+        draw_list->AddRectFilled(p, bar_max, m_config.custom_accent_color, m_config.corner_radius, ImDrawFlags_RoundCornersLeft);
 
         // Title
         ImVec2 label_pos(p.x + 16.f, p.y + 12.f);
         if (font)
-            draw_list.AddText(font, font->FontSize, label_pos, m_config.custom_text_color, m_title.c_str());
+            draw_list->AddText(font, font->FontSize, label_pos, m_config.custom_text_color, m_title.c_str());
         else
-            draw_list.AddText(label_pos, m_config.custom_text_color, m_title.c_str());
+            draw_list->AddText(label_pos, m_config.custom_text_color, m_title.c_str());
 
         // Message
         ImVec2 msg_pos(p.x + 16.f, p.y + 34.f);
         ImU32 msg_color = IM_COL32(185, 185, 195, 230);
         if (font)
-            draw_list.AddText(font, font->FontSize * 0.9f, msg_pos, msg_color, m_message.c_str());
+            draw_list->AddText(font, font->FontSize * 0.9f, msg_pos, msg_color, m_message.c_str());
         else
-            draw_list.AddText(msg_pos, msg_color, m_message.c_str());
+            draw_list->AddText(msg_pos, msg_color, m_message.c_str());
 
         // Progress countdown bar (if duration > 0)
         if (m_config.duration_seconds > 0.0f)
@@ -977,8 +1011,8 @@ void Window::RenderBuiltinProgress()
             float countdown = std::clamp(1.0f - (m_time_alive / m_config.duration_seconds), 0.0f, 1.0f);
             float track_w = s.x - 28.f;
             ImVec2 bar_pos(p.x + 14.f, max_pt.y - 5.f);
-            draw_list.AddRectFilled(bar_pos, ImVec2(bar_pos.x + track_w, bar_pos.y + 2.f), m_config.custom_track_color, 2.f);
-            draw_list.AddRectFilled(bar_pos, ImVec2(bar_pos.x + track_w * countdown, bar_pos.y + 2.f), m_config.custom_accent_color, 2.f);
+            draw_list->AddRectFilled(bar_pos, ImVec2(bar_pos.x + track_w, bar_pos.y + 2.f), m_config.custom_track_color, 2.f);
+            draw_list->AddRectFilled(bar_pos, ImVec2(bar_pos.x + track_w * countdown, bar_pos.y + 2.f), m_config.custom_accent_color, 2.f);
         }
     }
     else
@@ -988,12 +1022,12 @@ void Window::RenderBuiltinProgress()
         ImVec2 icon_pos(p.x + 17.f, p.y + 18.f);
 
         if (font)
-            draw_list.AddText(font, font->FontSize, label_pos, m_config.custom_text_color, m_title.c_str());
+            draw_list->AddText(font, font->FontSize, label_pos, m_config.custom_text_color, m_title.c_str());
         else
-            draw_list.AddText(label_pos, m_config.custom_text_color, m_title.c_str());
+            draw_list->AddText(label_pos, m_config.custom_text_color, m_title.c_str());
 
         if (m_config.custom_icon_font && !m_icon.empty())
-            draw_list.AddText(m_config.custom_icon_font, m_config.custom_icon_font->FontSize, icon_pos, m_config.custom_accent_color, m_icon.c_str());
+            draw_list->AddText(m_config.custom_icon_font, m_config.custom_icon_font->FontSize, icon_pos, m_config.custom_accent_color, m_icon.c_str());
 
         // Percentage
         std::string prog = (std::to_string(int(m_progress * 100)) + "%");
@@ -1003,9 +1037,9 @@ void Window::RenderBuiltinProgress()
         ImVec2 prog_pos(p.x + s.x - 16.f - prog_size.x, p.y + 16.f);
 
         if (font)
-            draw_list.AddText(font, font->FontSize, prog_pos, m_config.custom_accent_color, prog.c_str());
+            draw_list->AddText(font, font->FontSize, prog_pos, m_config.custom_accent_color, prog.c_str());
         else
-            draw_list.AddText(prog_pos, m_config.custom_accent_color, prog.c_str());
+            draw_list->AddText(prog_pos, m_config.custom_accent_color, prog.c_str());
 
         // Progress Bar Track & Dynamic Fill
         ImVec2 prog_bar_pos(p.x + 16.f, p.y + 38.f);
@@ -1013,42 +1047,9 @@ void Window::RenderBuiltinProgress()
         ImVec2 prog_bar_size(track_w, 4.f);
         ImVec2 prog_bar_size_dynamic(4.f + (track_w - 4.f) * m_progress, 4.f);
 
-        draw_list.AddRectFilled(prog_bar_pos, ImVec2(prog_bar_pos.x + prog_bar_size.x, prog_bar_pos.y + prog_bar_size.y), m_config.custom_track_color, 512.f);
-        draw_list.AddRectFilled(prog_bar_pos, ImVec2(prog_bar_pos.x + prog_bar_size_dynamic.x, prog_bar_pos.y + prog_bar_size_dynamic.y), m_config.custom_accent_color, 512.f);
+        draw_list->AddRectFilled(prog_bar_pos, ImVec2(prog_bar_pos.x + prog_bar_size.x, prog_bar_pos.y + prog_bar_size.y), m_config.custom_track_color, 512.f);
+        draw_list->AddRectFilled(prog_bar_pos, ImVec2(prog_bar_pos.x + prog_bar_size_dynamic.x, prog_bar_pos.y + prog_bar_size_dynamic.y), m_config.custom_accent_color, 512.f);
     }
-
-    draw_list.PopClipRect();
-    draw_list.PopTextureID();
-
-    // Package into ImDrawData and render via DirectX 11 backend
-    ImDrawData draw_data;
-    draw_data.Valid = true;
-    draw_data.CmdLists.push_back(&draw_list);
-    draw_data.CmdListsCount = 1;
-    draw_data.TotalVtxCount = draw_list.VtxBuffer.Size;
-    draw_data.TotalIdxCount = draw_list.IdxBuffer.Size;
-    draw_data.DisplayPos = ImVec2(0.f, 0.f);
-    draw_data.DisplaySize = m_window_size;
-    draw_data.FramebufferScale = ImVec2(1.f, 1.f);
-    draw_data.OwnerViewport = nullptr;
-
-    const float clear_color[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-    context->OMSetRenderTargets(1, &m_rtv, nullptr);
-    context->ClearRenderTargetView(m_rtv, clear_color);
-
-    D3D11_VIEWPORT vp;
-    vp.Width = m_window_size.x;
-    vp.Height = m_window_size.y;
-    vp.MinDepth = 0.0f;
-    vp.MaxDepth = 1.0f;
-    vp.TopLeftX = 0;
-    vp.TopLeftY = 0;
-    context->RSSetViewports(1, &vp);
-
-    ImGui_ImplDX11_RenderDrawData(&draw_data);
-
-    m_swap_chain->Present(1, 0);
-    context->Release();
 }
 
 LRESULT CALLBACK Window::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -1787,6 +1788,31 @@ std::vector<std::string> Manager::GetFloatingOverlayIds() const
 
 void Manager::UpdateFloatingOverlays(float delta_time)
 {
+    // Collect all active toast windows in creation order (oldest -> newest)
+    std::vector<Window*> active_toasts;
+    for (auto& overlay : m_floating_overlays)
+    {
+        if (overlay && overlay->IsAlive() && overlay->GetId().rfind("toast_", 0) == 0)
+        {
+            active_toasts.push_back(overlay.get());
+        }
+    }
+
+    // Dynamic upward stacking:
+    // Newest toast (last in active_toasts) gets slot 0 (at the bottom).
+    // Older active toasts get slot 1, 2, 3... and are shifted UPWARDS above newer ones!
+    int count = (int)active_toasts.size();
+    for (int i = 0; i < count; ++i)
+    {
+        int slot = (count - 1) - i;
+        Window* toast = active_toasts[i];
+        if (toast && !toast->IsClosing())
+        {
+            float target_offset_y = 20.f + (float)slot * (toast->GetConfig().size.y + toast->GetConfig().padding.y + toast->GetConfig().padding.w + 8.f);
+            toast->SetAnchor(toast->GetConfig().anchor, ImVec2(20.f, target_offset_y));
+        }
+    }
+
     for (auto it = m_floating_overlays.begin(); it != m_floating_overlays.end();)
     {
         if (!(*it)->Update(delta_time))
