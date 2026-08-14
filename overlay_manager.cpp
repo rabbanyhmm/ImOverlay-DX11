@@ -132,6 +132,8 @@ Window::~Window()
         ImGuiContext* prev_ctx = ImGui::GetCurrentContext();
         if (prev_ctx == m_imgui_context)
             ImGui::SetCurrentContext(nullptr);
+        m_imgui_context->IO.BackendRendererUserData = nullptr;
+        m_imgui_context->IO.BackendPlatformUserData = nullptr;
         ImGui::DestroyContext(m_imgui_context);
         m_imgui_context = nullptr;
         if (prev_ctx && prev_ctx != m_imgui_context)
@@ -525,7 +527,12 @@ void Window::SetupImGuiContext()
     io.IniFilename = nullptr;
     io.LogFilename = nullptr;
     if (prev_ctx)
+    {
+        io.BackendRendererUserData = prev_ctx->IO.BackendRendererUserData;
+        io.BackendRendererName     = prev_ctx->IO.BackendRendererName;
+        io.BackendFlags            = prev_ctx->IO.BackendFlags;
         ImGui::SetCurrentContext(prev_ctx);
+    }
 }
 
 void Window::Show(bool cascade_to_children)
@@ -915,14 +922,19 @@ void Window::Render()
     }
 
     ImGuiContext* prev_ctx = ImGui::GetCurrentContext();
+    if (prev_ctx)
+    {
+        m_imgui_context->IO.BackendRendererUserData = prev_ctx->IO.BackendRendererUserData;
+        m_imgui_context->IO.BackendRendererName     = prev_ctx->IO.BackendRendererName;
+        m_imgui_context->IO.BackendFlags            = prev_ctx->IO.BackendFlags;
+    }
+
     ImGui::SetCurrentContext(m_imgui_context);
 
     ImGuiIO& io = ImGui::GetIO();
     io.DisplaySize = m_window_size;
     io.DeltaTime = prev_ctx ? prev_ctx->IO.DeltaTime : 0.016f;
 
-    ImGui_ImplDX11_NewFrame();
-    ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
 
     if (m_render_callback)
