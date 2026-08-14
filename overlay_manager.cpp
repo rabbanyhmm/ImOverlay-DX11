@@ -875,6 +875,15 @@ void Manager::SetTopmost(bool topmost)
 
 // --- Screen Capture Protection & Background Monitor ---
 
+void Manager::SetMainCaptureHidden(bool hide)
+{
+    m_main_exclude_from_capture = hide;
+    if (m_hwnd && ::IsWindow(m_hwnd))
+    {
+        SetCaptureHidden(m_hwnd, hide);
+    }
+}
+
 void Manager::SetCaptureHidden(HWND hwnd, bool hide)
 {
     if (hwnd && ::IsWindow(hwnd))
@@ -888,21 +897,61 @@ void Manager::SetCaptureHidden(HWND hwnd, bool hide)
     }
 }
 
+void Manager::SetCaptureHidden(const std::string& window_id, bool hide)
+{
+    if (window_id == "main_menu")
+    {
+        SetMainCaptureHidden(hide);
+        return;
+    }
+
+    Window* win = GetFloatingOverlay(window_id);
+    if (win)
+    {
+        win->SetCaptureHidden(hide);
+        if (win->GetHwnd())
+        {
+            std::lock_guard<std::mutex> lock(m_hidden_windows_mutex);
+            if (hide)
+                m_hidden_capture_windows.insert(win->GetHwnd());
+            else
+                m_hidden_capture_windows.erase(win->GetHwnd());
+        }
+    }
+}
+
+bool Manager::IsCaptureHidden(const std::string& window_id) const
+{
+    if (window_id == "main_menu")
+        return m_main_exclude_from_capture;
+
+    for (const auto& overlay : m_floating_overlays)
+    {
+        if (overlay && overlay->GetId() == window_id && overlay->IsAlive())
+        {
+            return overlay->IsCaptureHidden();
+        }
+    }
+    return false;
+}
+
 void Manager::SetCaptureHiddenAll(bool hide)
 {
-    if (m_hwnd)
-        SetCaptureHidden(m_hwnd, hide);
+    SetMainCaptureHidden(hide);
 
     for (auto& overlay : m_floating_overlays)
     {
-        if (overlay && overlay->GetHwnd())
+        if (overlay)
         {
             overlay->SetCaptureHidden(hide);
-            std::lock_guard<std::mutex> lock(m_hidden_windows_mutex);
-            if (hide)
-                m_hidden_capture_windows.insert(overlay->GetHwnd());
-            else
-                m_hidden_capture_windows.erase(overlay->GetHwnd());
+            if (overlay->GetHwnd())
+            {
+                std::lock_guard<std::mutex> lock(m_hidden_windows_mutex);
+                if (hide)
+                    m_hidden_capture_windows.insert(overlay->GetHwnd());
+                else
+                    m_hidden_capture_windows.erase(overlay->GetHwnd());
+            }
         }
     }
 }
@@ -929,20 +978,21 @@ void Manager::CaptureMonitorLoop(uint32_t poll_interval_ms)
 {
     while (m_monitor_running.load())
     {
-        // Enforce capture exclusion on all active overlay windows
+        // Enforce capture exclusion on main menu only if configured
         if (m_hwnd && ::IsWindow(m_hwnd))
         {
-            ::SetWindowDisplayAffinity(m_hwnd, WDA_EXCLUDEFROMCAPTURE);
+            ::SetWindowDisplayAffinity(m_hwnd, m_main_exclude_from_capture ? WDA_EXCLUDEFROMCAPTURE : WDA_NONE);
         }
 
+        // Enforce capture exclusion individually per floating overlay
         for (auto& overlay : m_floating_overlays)
         {
             if (overlay && overlay->GetHwnd() && ::IsWindow(overlay->GetHwnd()))
             {
-                if (overlay->IsCaptureHidden())
-                {
-                    ::SetWindowDisplayAffinity(overlay->GetHwnd(), WDA_EXCLUDEFROMCAPTURE);
-                }
+                ::SetWindowDisplayAffinity(
+                    overlay->GetHwnd(),
+                    overlay->IsCaptureHidden() ? WDA_EXCLUDEFROMCAPTURE : WDA_NONE
+                );
             }
         }
 
@@ -962,9 +1012,10 @@ void Manager::CaptureMonitorLoop(uint32_t poll_interval_ms)
     }
 }
 
-void Manager::SetTaskbarVisibleAll(bool visible)
+void Manager::SetMainTaskbarVisible(bool visible)
 {
-    if (m_hwnd)
+    m_main_hide_from_taskbar = !visible;
+    if (m_hwnd && ::IsWindow(m_hwnd))
     {
         LONG_PTR ex = ::GetWindowLongPtr(m_hwnd, GWL_EXSTYLE);
         if (visible)
@@ -975,6 +1026,41 @@ void Manager::SetTaskbarVisibleAll(bool visible)
         ::SetWindowPos(m_hwnd, nullptr, 0, 0, 0, 0,
                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED | SWP_NOACTIVATE);
     }
+}
+
+void Manager::SetTaskbarVisible(const std::string& window_id, bool visible)
+{
+    if (window_id == "main_menu")
+    {
+        SetMainTaskbarVisible(visible);
+        return;
+    }
+
+    Window* win = GetFloatingOverlay(window_id);
+    if (win)
+    {
+        win->SetTaskbarVisible(visible);
+    }
+}
+
+bool Manager::IsTaskbarVisible(const std::string& window_id) const
+{
+    if (window_id == "main_menu")
+        return !m_main_hide_from_taskbar;
+
+    for (const auto& overlay : m_floating_overlays)
+    {
+        if (overlay && overlay->GetId() == window_id && overlay->IsAlive())
+        {
+            return overlay->IsTaskbarVisible();
+        }
+    }
+    return false;
+}
+
+void Manager::SetTaskbarVisibleAll(bool visible)
+{
+    SetMainTaskbarVisible(visible);
 
     for (auto& overlay : m_floating_overlays)
     {

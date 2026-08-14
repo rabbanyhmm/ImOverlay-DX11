@@ -326,13 +326,22 @@ public:
     void SetAutoTopmost(bool enable) { m_auto_topmost = enable; }
 
     // Screen Capture Protection (Streamer Mode / Anti-Recording)
+    // Granular Per-Window Controls:
+    void SetMainCaptureHidden(bool hide);
+    bool IsMainCaptureHidden() const { return m_main_exclude_from_capture; }
     void SetCaptureHidden(HWND hwnd, bool hide);
+    void SetCaptureHidden(const std::string& window_id, bool hide);
+    bool IsCaptureHidden(const std::string& window_id) const;
     void SetCaptureHiddenAll(bool hide);
     void StartCaptureMonitor(uint32_t poll_interval_ms = 1000);
     void StopCaptureMonitor();
     bool IsCaptureMonitorRunning() const { return m_monitor_running.load(); }
 
-    // Taskbar & Alt+Tab Controls
+    // Taskbar & Alt+Tab Controls (Per-Window & Bulk):
+    void SetMainTaskbarVisible(bool visible);
+    bool IsMainTaskbarVisible() const { return !m_main_hide_from_taskbar; }
+    void SetTaskbarVisible(const std::string& window_id, bool visible);
+    bool IsTaskbarVisible(const std::string& window_id) const;
     void SetTaskbarVisibleAll(bool visible);
 
     // Registration of expandable UI elements
@@ -419,6 +428,8 @@ private:
     bool m_is_topmost = false;
     bool m_auto_topmost = false;
     bool m_has_outside_elements = false;
+    bool m_main_exclude_from_capture = false;
+    bool m_main_hide_from_taskbar = false;
 
     // Capture monitor background thread state
     std::atomic<bool> m_monitor_running{ false };
