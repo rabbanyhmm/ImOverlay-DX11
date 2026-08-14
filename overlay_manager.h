@@ -11,6 +11,7 @@
 #include <dxgi.h>
 #include <string>
 #include <vector>
+#include <deque>
 #include <unordered_map>
 #include <unordered_set>
 #include <memory>
@@ -26,6 +27,7 @@
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "d3dcompiler.lib")
 #pragma comment(lib, "dwmapi.lib")
+#pragma comment(lib, "uxtheme.lib")
 #endif
 
 #ifndef WDA_NONE
@@ -49,6 +51,41 @@ enum class TransitionMode
 {
     Smooth, // Smooth exponential interpolation on window resizing
     Instant // Instantaneous window resize
+};
+
+// DWM Backdrop / Acrylic type (requires Windows 10 2004+ for Blur, Windows 11 22H2+ for Mica/Acrylic)
+enum class AcrylicType
+{
+    None,     // No blur
+    Blur,     // DWM blur behind (Win10 fallback)
+    Acrylic,  // Windows 11 Acrylic backdrop (DWMSBT_TRANSIENTWINDOW)
+    Mica,     // Windows 11 Mica (DWMSBT_MAINWINDOW)
+    MicaAlt   // Windows 11 Mica Alt / tabbed (DWMSBT_TABBEDWINDOW)
+};
+
+// Edge/corner a window has snapped to
+enum class SnapEdge
+{
+    None,
+    Left,
+    Right,
+    Top,
+    Bottom,
+    Corner_TopLeft,
+    Corner_TopRight,
+    Corner_BottomLeft,
+    Corner_BottomRight
+};
+
+// Actions available to global hotkeys
+enum class HotkeyAction
+{
+    ToggleVisibility,  // Show/hide all overlays
+    ToggleClickThrough,// Toggle click-through on all overlays
+    ToggleCapture,     // Toggle Streamer Mode (WDA_EXCLUDEFROMCAPTURE)
+    CollapseAll,       // Minimize all floating windows
+    RestoreAll,        // Restore all floating windows
+    Custom             // User-supplied callback
 };
 
 enum class AnchorMode
@@ -114,7 +151,17 @@ struct Config
     ImU32 custom_text_color = IM_COL32(255, 255, 255, 255);   // White text
     ImU32 custom_track_color = IM_COL32(255, 255, 255, 12);   // Progress track
     float border_thickness = 1.0f;      // Border outline thickness
-    bool enable_acrylic_blur = false;   // Optional DWM blur behind window
+
+    // --- Feature 1: Acrylic / Mica DWM Blur ---
+    bool enable_acrylic_blur = false;   // Apply DWM hardware blur behind this window
+    AcrylicType acrylic_type = AcrylicType::Acrylic; // Blur style (requires Win10+/Win11+)
+
+    // --- Feature 2: Magnetic Edge Snapping ---
+    bool enable_snap = true;            // Enable magnetic edge snapping when dragging
+    float snap_threshold = 18.0f;       // Snap activation distance in pixels
+
+    // --- Feature 4: Per-Window ImGui Context ---
+    bool enable_imgui_context = false;  // Give this window its own ImGuiContext (for full interactive ImGui UI)
 
     // Optional Font Pointers (if null, uses default ImGui font)
     ImFont* custom_font = nullptr;
@@ -201,6 +248,17 @@ public:
     void SetOpacity(float alpha);
     float GetOpacity() const { return m_alpha; }
 
+    // --- Feature 1: Acrylic / Mica DWM Blur ---
+    void SetAcrylicBlur(bool enable, AcrylicType type = AcrylicType::Acrylic);
+    bool IsAcrylicBlurEnabled() const { return m_config.enable_acrylic_blur; }
+    AcrylicType GetAcrylicType() const { return m_config.acrylic_type; }
+
+    // --- Feature 2: Magnetic Edge Snapping ---
+    bool IsSnapped() const { return m_snap_edge != SnapEdge::None; }
+    SnapEdge GetSnapEdge() const { return m_snap_edge; }
+    void SetSnapEnabled(bool enable) { m_config.enable_snap = enable; }
+    void SetSnapThreshold(float px) { m_config.snap_threshold = px; }
+
     void SetDuration(float seconds) { m_config.duration_seconds = seconds; }
     void SetClickableRegions(const std::vector<ImRect>& regions) { m_config.clickable_regions = regions; }
     void SetDragRegions(const std::vector<ImRect>& regions) { m_config.drag_regions = regions; }
@@ -255,6 +313,9 @@ private:
     void CalculateScreenPosition(const ImVec2& margin = ImVec2(24.f, 24.f));
     void RenderBuiltinProgress();
     void ResizeBuffers(int width, int height);
+    void ApplyAcrylicEffect();          // Feature 1: DWM blur/acrylic setup
+    void SnapWindowPosition(RECT& rc);  // Feature 2: magnetic snap, modifies RECT in WM_MOVING
+    void SetupImGuiContext();           // Feature 4: create per-window ImGuiContext
 
     std::string m_id;
     HWND m_hwnd = nullptr;
@@ -281,6 +342,12 @@ private:
     std::string m_icon;
     float m_progress = 0.0f;
     float m_finish_timer = 0.0f;
+
+    // Feature 2: snap state
+    SnapEdge m_snap_edge = SnapEdge::None;
+
+    // Feature 4: per-window ImGui context
+    ImGuiContext* m_imgui_context = nullptr;
 
     RenderCallback m_render_callback = nullptr;
     EventCallback m_on_close_cb = nullptr;
@@ -344,6 +411,35 @@ public:
     bool IsTaskbarVisible(const std::string& window_id) const;
     void SetTaskbarVisibleAll(bool visible);
 
+    // =========================================================================
+    // Feature 3: Multi-Toast Queue & Stacking Engine
+    // Thread-safe: PushToast may be called from any thread.
+    // =========================================================================
+    void PushToast(const std::string& title, const std::string& message,
+                   float duration = 4.0f,
+                   ImU32 accent = IM_COL32(138, 143, 255, 255),
+                   AnchorMode anchor = AnchorMode::Screen_BottomRight);
+    void DismissToast(const std::string& title);
+    void DismissAllToasts();
+    size_t GetToastCount() const;
+
+    // Legacy — redirects to PushToast
+    [[deprecated("Use PushToast() instead for stacking support")]]
+    void ShowDetachedToast(const std::string& title, const std::string& message,
+                           const Config& config = {});
+
+    // =========================================================================
+    // Feature 5: Global Hotkey Listener
+    // Spawns a message-only HWND on a background thread; thread-safe.
+    // =========================================================================
+    bool RegisterHotkey(int id, UINT modifiers, UINT vk, HotkeyAction action,
+                        std::function<void()> custom_cb = nullptr);
+    void UnregisterHotkey(int id);
+    void UnregisterAllHotkeys();
+    void StartHotkeyListener();
+    void StopHotkeyListener();
+    bool IsHotkeyListenerRunning() const { return m_hotkey_running.load(); }
+
     // Registration of expandable UI elements
     void RegisterElement(const std::string& name, const ImVec2& pos, const ImVec2& size, bool interactive = true);
     void RegisterRelativeElement(const std::string& name, const ImVec2& local_pos, const ImVec2& size, bool interactive = true)
@@ -402,6 +498,7 @@ public:
     HWND GetMainHwnd() const { return m_hwnd; }
 
 private:
+    friend class Window; // Allow Window::SnapWindowPosition to access m_floating_overlays
     Manager() = default;
     ~Manager();
 
@@ -436,6 +533,56 @@ private:
     std::thread m_monitor_thread;
     std::mutex m_hidden_windows_mutex;
     std::unordered_set<HWND> m_hidden_capture_windows;
+
+    // -------------------------------------------------------------------------
+    // Feature 3: Multi-Toast Queue
+    // -------------------------------------------------------------------------
+    struct ToastEntry
+    {
+        std::string  id;             // Unique id (title + index)
+        std::string  title;
+        std::string  message;
+        float        duration;       // Auto-dismiss seconds
+        float        age = 0.f;      // Time alive
+        float        anim_t = 0.f;   // 0..1 slide-in progress
+        bool         dismissing = false;
+        ImU32        accent;
+        AnchorMode   anchor;
+    };
+    std::deque<ToastEntry> m_toast_queue;
+    std::mutex             m_toast_mutex;
+    static constexpr int   k_max_toasts    = 5;
+    static constexpr float k_toast_spacing = 12.f;
+    static constexpr float k_toast_w       = 320.f;
+    static constexpr float k_toast_h       = 68.f;
+    static constexpr float k_toast_margin  = 20.f;
+    HWND  m_toast_hwnd    = nullptr;
+    IDXGISwapChain*         m_toast_swap_chain = nullptr;
+    ID3D11RenderTargetView* m_toast_rtv        = nullptr;
+
+    void UpdateToasts(float delta_time);
+    void RenderToasts();
+    void EnsureToastWindow();
+
+    // -------------------------------------------------------------------------
+    // Feature 5: Global Hotkey Listener
+    // -------------------------------------------------------------------------
+    struct HotkeyEntry
+    {
+        int         id;
+        UINT        modifiers;
+        UINT        vk;
+        HotkeyAction action;
+        std::function<void()> custom_cb;
+    };
+    std::unordered_map<int, HotkeyEntry> m_hotkeys;
+    std::mutex     m_hotkey_mutex;
+    std::thread    m_hotkey_thread;
+    HWND           m_hotkey_hwnd = nullptr;
+    std::atomic<bool> m_hotkey_running{ false };
+
+    void HotkeyMessageLoop();
+    void DispatchHotkeyAction(const HotkeyEntry& entry);
 
     void RecalculateBounds();
     void ApplyWindowResize(int width, int height);

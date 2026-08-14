@@ -1,8 +1,57 @@
 #include "overlay_manager.h"
 #include "backends/imgui_impl_dx11.h"
+#include "backends/imgui_impl_win32.h"
 #include <dwmapi.h>
 #include <algorithm>
 #include <cmath>
+#include <sstream>
+#include <chrono>
+
+// ============================================================================
+// DWM Composition Attribute (Windows 10 Acrylic fallback)
+// ============================================================================
+#ifndef DWMWA_SYSTEMBACKDROP_TYPE
+#define DWMWA_SYSTEMBACKDROP_TYPE 38
+#endif
+#ifndef DWMSBT_NONE
+#define DWMSBT_NONE             0  // No backdrop
+#define DWMSBT_MAINWINDOW       1  // Mica
+#define DWMSBT_TRANSIENTWINDOW  3  // Acrylic
+#define DWMSBT_TABBEDWINDOW     4  // Mica Alt (tabbed)
+#endif
+
+enum ACCENT_STATE
+{
+    ACCENT_DISABLED                   = 0,
+    ACCENT_ENABLE_GRADIENT            = 1,
+    ACCENT_ENABLE_TRANSPARENTGRADIENT = 2,
+    ACCENT_ENABLE_BLURBEHIND          = 3,
+    ACCENT_ENABLE_ACRYLICBLURBEHIND   = 4,
+    ACCENT_INVALID_STATE              = 5
+};
+
+struct ACCENT_POLICY
+{
+    ACCENT_STATE AccentState;
+    DWORD        AccentFlags;
+    DWORD        GradientColor;
+    DWORD        AnimationId;
+};
+
+enum WINDOWCOMPOSITIONATTRIB
+{
+    WCA_ACCENT_POLICY = 19
+};
+
+struct WINDOWCOMPOSITIONATTRIBDATA
+{
+    WINDOWCOMPOSITIONATTRIB Attrib;
+    PVOID                   pvData;
+    SIZE_T                  cbData;
+};
+
+using PFN_SetWindowCompositionAttribute =
+    BOOL(WINAPI*)(HWND, WINDOWCOMPOSITIONATTRIBDATA*);
 
 #ifndef GET_X_LPARAM
 #define GET_X_LPARAM(lp) ((int)(short)LOWORD(lp))
@@ -45,6 +94,17 @@ Window::~Window()
     {
         m_swap_chain->Release();
         m_swap_chain = nullptr;
+    }
+    // Feature 4: Destroy per-window ImGui context if it exists
+    if (m_imgui_context)
+    {
+        ImGuiContext* prev_ctx = ImGui::GetCurrentContext();
+        ImGui::SetCurrentContext(m_imgui_context);
+        ImGui_ImplDX11_Shutdown();
+        ImGui_ImplWin32_Shutdown();
+        ImGui::DestroyContext(m_imgui_context);
+        m_imgui_context = nullptr;
+        if (prev_ctx != m_imgui_context) ImGui::SetCurrentContext(prev_ctx);
     }
     if (m_hwnd)
     {
@@ -234,6 +294,14 @@ void Window::InitWindow(IDXGIFactory* factory)
                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     }
 
+    // Feature 1: Apply Acrylic/Mica blur if requested
+    if (m_config.enable_acrylic_blur)
+        ApplyAcrylicEffect();
+
+    // Feature 4: Create per-window ImGui context if requested
+    if (m_config.enable_imgui_context)
+        SetupImGuiContext();
+
     if (!m_config.start_hidden)
     {
         if (m_config.start_minimized)
@@ -242,6 +310,158 @@ void Window::InitWindow(IDXGIFactory* factory)
             ::ShowWindow(m_hwnd, SW_SHOWNOACTIVATE);
         ::UpdateWindow(m_hwnd);
     }
+}
+
+// ============================================================================
+// Feature 1: Acrylic / Mica DWM Hardware Blur
+// ============================================================================
+
+void Window::ApplyAcrylicEffect()
+{
+    if (!m_hwnd || m_config.acrylic_type == AcrylicType::None)
+        return;
+
+    // Windows 11 22H2+ path: DWMWA_SYSTEMBACKDROP_TYPE
+    {
+        int backdrop = DWMSBT_NONE;
+        switch (m_config.acrylic_type)
+        {
+        case AcrylicType::Mica:    backdrop = DWMSBT_MAINWINDOW;      break;
+        case AcrylicType::Acrylic: backdrop = DWMSBT_TRANSIENTWINDOW; break;
+        case AcrylicType::MicaAlt: backdrop = DWMSBT_TABBEDWINDOW;    break;
+        default: break;
+        }
+        if (backdrop != DWMSBT_NONE)
+        {
+            HRESULT hr = ::DwmSetWindowAttribute(
+                m_hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &backdrop, sizeof(backdrop));
+            if (SUCCEEDED(hr))
+                return; // Win11 Mica/Acrylic applied
+        }
+    }
+
+    // Windows 10 fallback: SetWindowCompositionAttribute
+    HMODULE hUser32 = ::GetModuleHandleW(L"user32.dll");
+    if (!hUser32) return;
+    auto pfnSet = reinterpret_cast<PFN_SetWindowCompositionAttribute>(
+        ::GetProcAddress(hUser32, "SetWindowCompositionAttribute"));
+    if (!pfnSet) return;
+
+    ACCENT_STATE state = ACCENT_DISABLED;
+    switch (m_config.acrylic_type)
+    {
+    case AcrylicType::Blur:    state = ACCENT_ENABLE_BLURBEHIND;        break;
+    case AcrylicType::Acrylic: state = ACCENT_ENABLE_ACRYLICBLURBEHIND; break;
+    default:                   state = ACCENT_ENABLE_BLURBEHIND;        break;
+    }
+
+    ACCENT_POLICY policy = { state, 0x20, 0x00000000, 0 };
+    WINDOWCOMPOSITIONATTRIBDATA data;
+    data.Attrib = WCA_ACCENT_POLICY;
+    data.pvData = &policy;
+    data.cbData = sizeof(policy);
+    pfnSet(m_hwnd, &data);
+}
+
+void Window::SetAcrylicBlur(bool enable, AcrylicType type)
+{
+    m_config.enable_acrylic_blur = enable;
+    m_config.acrylic_type        = type;
+    if (!enable)
+    {
+        int none = DWMSBT_NONE;
+        ::DwmSetWindowAttribute(m_hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &none, sizeof(none));
+        HMODULE hUser32 = ::GetModuleHandleW(L"user32.dll");
+        if (hUser32)
+        {
+            auto pfnSet = reinterpret_cast<PFN_SetWindowCompositionAttribute>(
+                ::GetProcAddress(hUser32, "SetWindowCompositionAttribute"));
+            if (pfnSet)
+            {
+                ACCENT_POLICY p2 = { ACCENT_DISABLED, 0, 0, 0 };
+                WINDOWCOMPOSITIONATTRIBDATA d2{ WCA_ACCENT_POLICY, &p2, sizeof(p2) };
+                pfnSet(m_hwnd, &d2);
+            }
+        }
+    }
+    else { ApplyAcrylicEffect(); }
+}
+
+// ============================================================================
+// Feature 2: Magnetic Edge Snapping
+// ============================================================================
+
+void Window::SnapWindowPosition(RECT& rc)
+{
+    if (!m_config.enable_snap) return;
+    const float t = m_config.snap_threshold;
+    float w = (float)(rc.right  - rc.left);
+    float h = (float)(rc.bottom - rc.top);
+    float x = (float)rc.left;
+    float y = (float)rc.top;
+
+    HMONITOR hMon = ::MonitorFromRect(&rc, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi = { sizeof(mi) };
+    ::GetMonitorInfoW(hMon, &mi);
+    float sl = (float)mi.rcWork.left, st = (float)mi.rcWork.top;
+    float sr = (float)mi.rcWork.right, sb = (float)mi.rcWork.bottom;
+
+    bool sx = false, sy = false;
+    if (std::abs(x - sl) < t)           { x = sl;       sx = true; }
+    else if (std::abs(x + w - sr) < t)  { x = sr - w;   sx = true; }
+    if (std::abs(y - st) < t)           { y = st;       sy = true; }
+    else if (std::abs(y + h - sb) < t)  { y = sb - h;   sy = true; }
+
+    // Inter-window snap
+    for (auto& overlay : Manager::Get().m_floating_overlays)
+    {
+        if (!overlay || overlay.get() == this || !overlay->IsAlive() || !overlay->GetHwnd()) continue;
+        RECT orc;
+        if (!::GetWindowRect(overlay->GetHwnd(), &orc)) continue;
+        float ol = (float)orc.left, ot2 = (float)orc.top;
+        float or2 = (float)orc.right, ob = (float)orc.bottom;
+        if (!sx) {
+            if (std::abs(x + w - ol) < t)  { x = ol - w; sx = true; }
+            else if (std::abs(x - or2) < t) { x = or2;    sx = true; }
+        }
+        if (!sy) {
+            if (std::abs(y + h - ot2) < t) { y = ot2 - h; sy = true; }
+            else if (std::abs(y - ob) < t)  { y = ob;       sy = true; }
+        }
+    }
+
+    SnapEdge edge = SnapEdge::None;
+    if      (sx && sy && x <= sl + 1 && y <= st + 1)     edge = SnapEdge::Corner_TopLeft;
+    else if (sx && sy && x >= sr - w - 1 && y <= st + 1) edge = SnapEdge::Corner_TopRight;
+    else if (sx && sy && x <= sl + 1)                     edge = SnapEdge::Corner_BottomLeft;
+    else if (sx && sy)                                     edge = SnapEdge::Corner_BottomRight;
+    else if (sx) edge = (x <= sl + 1) ? SnapEdge::Left : SnapEdge::Right;
+    else if (sy) edge = (y <= st + 1) ? SnapEdge::Top  : SnapEdge::Bottom;
+    m_snap_edge = edge;
+
+    rc.left   = (LONG)x;  rc.top    = (LONG)y;
+    rc.right  = (LONG)(x + w); rc.bottom = (LONG)(y + h);
+}
+
+// ============================================================================
+// Feature 4: Per-Window ImGui Context
+// ============================================================================
+
+void Window::SetupImGuiContext()
+{
+    if (m_imgui_context || !m_hwnd || !m_device) return;
+    ImGuiContext* prev_ctx = ImGui::GetCurrentContext();
+    m_imgui_context = ImGui::CreateContext(ImGui::GetIO().Fonts);
+    ImGui::SetCurrentContext(m_imgui_context);
+    ImGuiIO& io = ImGui::GetIO();
+    io.DisplaySize = ImVec2(m_window_size.x, m_window_size.y);
+    io.IniFilename = nullptr;
+    ImGui_ImplWin32_Init(m_hwnd);
+    ID3D11DeviceContext* ctx = nullptr;
+    m_device->GetImmediateContext(&ctx);
+    ImGui_ImplDX11_Init(m_device, ctx);
+    if (ctx) ctx->Release();
+    ImGui::SetCurrentContext(prev_ctx);
 }
 
 void Window::Show(bool cascade_to_children)
@@ -797,6 +1017,13 @@ LRESULT CALLBACK Window::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
         break;
 
     case WM_MOVING:
+        // Feature 2: Magnetic snapping - lParam is LPRECT, modify in-place
+        if (self && self->m_config.enable_snap)
+        {
+            RECT* prc = reinterpret_cast<RECT*>(lParam);
+            if (prc) self->SnapWindowPosition(*prc);
+        }
+        // fall-through to WM_MOVE to update position state
     case WM_MOVE:
         if (self)
         {
@@ -834,6 +1061,7 @@ LRESULT CALLBACK Window::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
 Manager::~Manager()
 {
     StopCaptureMonitor();
+    StopHotkeyListener();
 }
 
 void Manager::Init(HWND hwnd, const ImVec2& initial_pos, const ImVec2& menu_size)
@@ -1208,6 +1436,7 @@ void Manager::EndFrame(float delta_time)
         }
     }
 
+    UpdateToasts(delta_time);
     UpdateFloatingOverlays(delta_time);
 }
 
@@ -1465,6 +1694,325 @@ void Manager::UpdateFloatingOverlays(float delta_time)
             (*it)->Render();
             ++it;
         }
+    }
+}
+
+
+// ============================================================================
+// Feature 3: Multi-Toast Queue & Stacking Engine
+// ============================================================================
+
+void Manager::PushToast(const std::string& title, const std::string& message,
+                        float duration, ImU32 accent, AnchorMode anchor)
+{
+    std::lock_guard<std::mutex> lock(m_toast_mutex);
+    // Evict oldest if over cap
+    while ((int)m_toast_queue.size() >= k_max_toasts)
+        m_toast_queue.pop_front();
+
+    static int counter = 0;
+    std::string uid = title + "_" + std::to_string(counter++);
+    ToastEntry entry;
+    entry.id       = uid;
+    entry.title    = title;
+    entry.message  = message;
+    entry.duration = duration;
+    entry.age      = 0.f;
+    entry.anim_t   = 0.f;
+    entry.dismissing = false;
+    entry.accent   = accent;
+    entry.anchor   = anchor;
+    m_toast_queue.push_back(std::move(entry));
+}
+
+void Manager::DismissToast(const std::string& title)
+{
+    std::lock_guard<std::mutex> lock(m_toast_mutex);
+    for (auto& t : m_toast_queue)
+        if (t.title == title && !t.dismissing) t.dismissing = true;
+}
+
+void Manager::DismissAllToasts()
+{
+    std::lock_guard<std::mutex> lock(m_toast_mutex);
+    for (auto& t : m_toast_queue) t.dismissing = true;
+}
+
+size_t Manager::GetToastCount() const
+{
+    std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(m_toast_mutex));
+    return m_toast_queue.size();
+}
+
+void Manager::UpdateToasts(float delta_time)
+{
+    std::lock_guard<std::mutex> lock(m_toast_mutex);
+    for (auto& t : m_toast_queue)
+    {
+        t.age += delta_time;
+        if (!t.dismissing)
+        {
+            t.anim_t = std::min(t.anim_t + delta_time * 6.f, 1.f);
+            if (t.duration > 0.f && t.age >= t.duration)
+                t.dismissing = true;
+        }
+        else
+        {
+            t.anim_t = std::max(t.anim_t - delta_time * 6.f, 0.f);
+        }
+    }
+    // Remove fully dismissed toasts
+    m_toast_queue.erase(
+        std::remove_if(m_toast_queue.begin(), m_toast_queue.end(),
+            [](const ToastEntry& t) { return t.dismissing && t.anim_t <= 0.f; }),
+        m_toast_queue.end());
+
+    if (!m_toast_queue.empty())
+        RenderToasts();
+}
+
+void Manager::RenderToasts()
+{
+    if (!ImGui::GetCurrentContext() || m_toast_queue.empty()) return;
+
+    // Get primary monitor work area
+    POINT pt = { 0, 0 };
+    HMONITOR hMon = ::MonitorFromPoint(pt, MONITOR_DEFAULTTOPRIMARY);
+    MONITORINFO mi = { sizeof(mi) };
+    ::GetMonitorInfoW(hMon, &mi);
+    float sw = (float)(mi.rcWork.right  - mi.rcWork.left);
+    float sh = (float)(mi.rcWork.bottom - mi.rcWork.top);
+    float ox = (float)mi.rcWork.left;
+    float oy = (float)mi.rcWork.top;
+
+    // Use the main ImGui draw list (overlay on top of everything)
+    // Toasts render as ImGui overlay windows using SetNextWindowPos
+    int idx = 0;
+    for (auto it = m_toast_queue.rbegin(); it != m_toast_queue.rend(); ++it, ++idx)
+    {
+        auto& t = *it;
+        float slide_pct = t.anim_t; // 0..1
+
+        // Stack from bottom-right going upward
+        float py = oy + sh - k_toast_margin
+                   - (k_toast_h + k_toast_spacing) * (float)(idx + 1)
+                   + (k_toast_h + k_toast_spacing) * (1.f - slide_pct);
+        float px = ox + sw - k_toast_w - k_toast_margin;
+
+        float alpha = slide_pct;
+
+        ImGui::SetNextWindowPos(ImVec2(px, py), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(k_toast_w, k_toast_h), ImGuiCond_Always);
+        ImGui::SetNextWindowBgAlpha(0.0f); // We draw our own background
+
+        ImGuiWindowFlags flags =
+            ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+            ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
+            ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav |
+            ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus;
+
+        std::string wnd_id = "##toast_" + t.id;
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
+        ImGui::Begin(wnd_id.c_str(), nullptr, flags);
+        {
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+            ImVec2 wpos = ImGui::GetWindowPos();
+            ImVec2 wsize = ImGui::GetWindowSize();
+            ImVec2 pmin = wpos;
+            ImVec2 pmax = ImVec2(wpos.x + wsize.x, wpos.y + wsize.y);
+
+            // Card background
+            dl->AddRectFilled(pmin, pmax, IM_COL32(22, 22, 28, (int)(230 * alpha)), 12.f);
+            // Accent left bar
+            dl->AddRectFilled(pmin, ImVec2(pmin.x + 4.f, pmax.y),
+                              (t.accent & 0x00FFFFFF) | ((DWORD)(alpha * 255) << 24), 12.f, ImDrawFlags_RoundCornersLeft);
+            // Border
+            dl->AddRect(pmin, pmax, IM_COL32(255, 255, 255, (int)(28 * alpha)), 12.f, 0, 1.f);
+
+            // Title text
+            ImGui::SetCursorPos(ImVec2(14.f, 8.f));
+            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, (int)(255 * alpha)));
+            ImGui::TextUnformatted(t.title.c_str());
+            // Message text
+            ImGui::SetCursorPos(ImVec2(14.f, 28.f));
+            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(180, 180, 190, (int)(220 * alpha)));
+            ImGui::TextUnformatted(t.message.c_str());
+            ImGui::PopStyleColor(2);
+
+            // Progress bar (time remaining)
+            if (t.duration > 0.f)
+            {
+                float progress = std::max(0.f, 1.f - t.age / t.duration);
+                ImVec2 bar_min(pmin.x + 10.f, pmax.y - 5.f);
+                ImVec2 bar_max(pmax.x - 10.f, pmax.y - 3.f);
+                dl->AddRectFilled(bar_min, bar_max, IM_COL32(255,255,255, (int)(15 * alpha)), 2.f);
+                dl->AddRectFilled(bar_min, ImVec2(bar_min.x + (bar_max.x - bar_min.x) * progress, bar_max.y),
+                                  (t.accent & 0x00FFFFFF) | ((DWORD)(int)(180 * alpha) << 24), 2.f);
+            }
+        }
+        ImGui::End();
+        ImGui::PopStyleVar();
+    }
+}
+
+// ============================================================================
+// Feature 5: Global Hotkey Listener
+// ============================================================================
+
+bool Manager::RegisterHotkey(int id, UINT modifiers, UINT vk,
+                              HotkeyAction action, std::function<void()> custom_cb)
+{
+    std::lock_guard<std::mutex> lock(m_hotkey_mutex);
+    HotkeyEntry entry{ id, modifiers, vk, action, custom_cb };
+    m_hotkeys[id] = std::move(entry);
+
+    // If listener is already running, register immediately on the message loop
+    if (m_hotkey_running.load() && m_hotkey_hwnd)
+    {
+        ::PostMessage(m_hotkey_hwnd, WM_APP + 1, (WPARAM)id, 0);
+    }
+    return true;
+}
+
+void Manager::UnregisterHotkey(int id)
+{
+    std::lock_guard<std::mutex> lock(m_hotkey_mutex);
+    m_hotkeys.erase(id);
+    if (m_hotkey_running.load() && m_hotkey_hwnd)
+    {
+        ::PostMessage(m_hotkey_hwnd, WM_APP + 2, (WPARAM)id, 0);
+    }
+}
+
+void Manager::UnregisterAllHotkeys()
+{
+    std::lock_guard<std::mutex> lock(m_hotkey_mutex);
+    for (auto& [id, _] : m_hotkeys)
+    {
+        if (m_hotkey_running.load() && m_hotkey_hwnd)
+            ::PostMessage(m_hotkey_hwnd, WM_APP + 2, (WPARAM)id, 0);
+    }
+    m_hotkeys.clear();
+}
+
+void Manager::StartHotkeyListener()
+{
+    if (m_hotkey_running.load()) return;
+    m_hotkey_running = true;
+    m_hotkey_thread = std::thread(&Manager::HotkeyMessageLoop, this);
+}
+
+void Manager::StopHotkeyListener()
+{
+    if (!m_hotkey_running.load()) return;
+    m_hotkey_running = false;
+    if (m_hotkey_hwnd)
+        ::PostMessage(m_hotkey_hwnd, WM_QUIT, 0, 0);
+    if (m_hotkey_thread.joinable())
+        m_hotkey_thread.join();
+    m_hotkey_hwnd = nullptr;
+}
+
+void Manager::HotkeyMessageLoop()
+{
+    // Create a message-only window to receive WM_HOTKEY messages
+    HINSTANCE hInst = ::GetModuleHandle(nullptr);
+    const wchar_t* cls = L"ImOverlay_HotkeyMsgWnd";
+    WNDCLASSEXW wc = { sizeof(wc) };
+    wc.lpfnWndProc = ::DefWindowProcW;
+    wc.hInstance   = hInst;
+    wc.lpszClassName = cls;
+    ::RegisterClassExW(&wc);
+
+    m_hotkey_hwnd = ::CreateWindowExW(0, cls, L"", 0,
+        0, 0, 0, 0, HWND_MESSAGE, nullptr, hInst, nullptr);
+
+    // Register all pending hotkeys
+    {
+        std::lock_guard<std::mutex> lock(m_hotkey_mutex);
+        for (auto& [id, entry] : m_hotkeys)
+            ::RegisterHotKey(m_hotkey_hwnd, id, entry.modifiers, entry.vk);
+    }
+
+    MSG msg = {};
+    while (::GetMessage(&msg, nullptr, 0, 0))
+    {
+        if (msg.message == WM_HOTKEY)
+        {
+            int id = (int)msg.wParam;
+            std::lock_guard<std::mutex> lock(m_hotkey_mutex);
+            auto it = m_hotkeys.find(id);
+            if (it != m_hotkeys.end())
+                DispatchHotkeyAction(it->second);
+        }
+        else if (msg.message == WM_APP + 1)
+        {
+            // Register newly added hotkey
+            int id = (int)msg.wParam;
+            std::lock_guard<std::mutex> lock(m_hotkey_mutex);
+            auto it = m_hotkeys.find(id);
+            if (it != m_hotkeys.end())
+                ::RegisterHotKey(m_hotkey_hwnd, id, it->second.modifiers, it->second.vk);
+        }
+        else if (msg.message == WM_APP + 2)
+        {
+            // Unregister removed hotkey
+            ::UnregisterHotKey(m_hotkey_hwnd, (int)msg.wParam);
+        }
+        ::TranslateMessage(&msg);
+        ::DispatchMessage(&msg);
+    }
+
+    // Cleanup hotkeys before exit
+    {
+        std::lock_guard<std::mutex> lock(m_hotkey_mutex);
+        for (auto& [id, _] : m_hotkeys)
+            ::UnregisterHotKey(m_hotkey_hwnd, id);
+    }
+    if (m_hotkey_hwnd)
+    {
+        ::DestroyWindow(m_hotkey_hwnd);
+        m_hotkey_hwnd = nullptr;
+    }
+    ::UnregisterClassW(cls, hInst);
+}
+
+void Manager::DispatchHotkeyAction(const HotkeyEntry& entry)
+{
+    // Hotkey dispatched from background thread — post actions to be applied on next frame
+    // where possible; visibility toggles are safe to do immediately via Win32 API.
+    switch (entry.action)
+    {
+    case HotkeyAction::ToggleVisibility:
+    {
+        bool any_visible = false;
+        for (auto& ov : m_floating_overlays)
+            if (ov && ov->IsVisible()) { any_visible = true; break; }
+        if (any_visible) HideAllFloatingOverlays();
+        else             ShowAllFloatingOverlays();
+        break;
+    }
+    case HotkeyAction::ToggleClickThrough:
+    {
+        bool any_ct = false;
+        for (auto& ov : m_floating_overlays)
+            if (ov && ov->IsClickThrough()) { any_ct = true; break; }
+        for (auto& ov : m_floating_overlays)
+            if (ov) ov->SetClickThrough(!any_ct);
+        break;
+    }
+    case HotkeyAction::ToggleCapture:
+        SetCaptureHiddenAll(!IsMainCaptureHidden());
+        break;
+    case HotkeyAction::CollapseAll:
+        MinimizeAllFloatingOverlays();
+        break;
+    case HotkeyAction::RestoreAll:
+        RestoreAllFloatingOverlays();
+        break;
+    case HotkeyAction::Custom:
+        if (entry.custom_cb) entry.custom_cb();
+        break;
     }
 }
 

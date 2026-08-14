@@ -1,340 +1,308 @@
-<div align="center">
+﻿<div align="center">
 
-# 🪟 ImOverlay-DX11
+# 🎯 ImOverlay-DX11
 
-**A modern, lightweight 2-file transparent desktop overlay & multi-window framework for Win32 and DirectX 11.**
+**A professional, hardware-accelerated Desktop Overlay & Multi-Window Framework**
+**built on Dear ImGui + Direct3D 11 for Windows**
 
-[![GitHub](https://img.shields.io/badge/GitHub-rabbanyhmm%2FImOverlay--DX11-blue?logo=github)](https://github.com/rabbanyhmm/ImOverlay-DX11.git)
-[![C++20](https://img.shields.io/badge/Language-C%2B%2B20-00599C?logo=c%2B%2B)](https://en.cppreference.com/w/cpp/20)
-[![DirectX 11](https://img.shields.io/badge/Graphics-DirectX%2011-green?logo=directx)](https://learn.microsoft.com/en-us/windows/win32/direct3d11/direct3d-11-graphics)
-[![Dear ImGui](https://img.shields.io/badge/UI-Dear%20ImGui-orange)](https://github.com/ocornut/imgui)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20x64-0078D6?logo=windows)](https://microsoft.com)
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Windows](https://img.shields.io/badge/Platform-Windows%2010%2B-lightblue.svg)](https://microsoft.com/windows)
+[![DirectX 11](https://img.shields.io/badge/DirectX-11-green.svg)](https://docs.microsoft.com/en-us/windows/win32/direct3d11/atoc-dx-graphics-direct3d-11)
+[![C++17](https://img.shields.io/badge/C%2B%2B-17-orange.svg)](https://en.cppreference.com/w/cpp/17)
+[![GitHub](https://img.shields.io/badge/Repo-GitHub-black.svg)](https://github.com/rabbanyhmm/ImOverlay-DX11)
 
-<p align="center">
-  <a href="#-key-features">Key Features</a> •
-  <a href="#-quick-start">Quick Start</a> •
-  <a href="#-multi-window--hierarchy-system">Multi-Window & Hierarchy</a> •
-  <a href="#-api-reference">API Reference</a> •
-  <a href="#-architecture">Architecture</a> •
-  <a href="#-license">License</a>
-</p>
+> **Create beautiful, hardware-accelerated overlay windows with Acrylic blur, magnetic snapping, stacking toasts, global hotkeys, and OBS-invisible Streamer Mode — in a single header+source pair.**
 
 </div>
 
 ---
 
-## 📖 Overview
+## ✨ Feature Matrix
 
-**ImOverlay-DX11** is a high-performance C++20 framework for building **hardware-accelerated, transparent desktop overlays and multi-window systems** using Win32 and DirectX 11 with Dear ImGui.
-
-Everything is packed into **two clean, standalone files** (`overlay_manager.h` and `overlay_manager.cpp`), allowing you to drop it into any project in seconds.
-
----
-
-## ✨ Key Features
-
-| Feature | Description |
-| :--- | :--- |
-| 🏎️ **Dynamic Physical Auto-Expansion** | Automatically expands the physical Win32 window (`SetWindowPos`) when dropdowns, toasts, or menus extend beyond the main bounds, and smoothly shrinks back on completion. |
-| 🎯 **Smart Click-Through** | Transparent background margins allow mouse clicks to pass straight through (`HTTRANSPARENT`) to underlying games, desktop icons, and browser windows. |
-| 🖱️ **Zero-Lag Native Window Dragging** | Native OS dragging (`HTCAPTION`) on empty backgrounds and headers with a high-resolution modal render pump for **continuous 60 FPS** without freezing animations. |
-| 👨‍👧 **Parent-Child Sub-Window Hierarchy** | Attach sub-toolbars and child overlays with automatic cascading **Close, Destroy, Minimize, Restore, Show, and Hide**. |
-| 🔗 **Real-Time Follow Drag** | Sub-windows anchored to a parent window smoothly follow the parent's movement in real time (`OnParentMoved`). |
-| 🏝️ **Independent Multi-Window System** | Spawn unlimited secondary windows with dedicated DirectX 11 swapchains, custom ImGui render callbacks, and independent `HWND_TOPMOST` z-orders. |
-| 🖥️ **Multi-Monitor Display Snapping** | Automatically detects active display monitor work areas (`MonitorFromWindow` / `rcWork`) across multi-screen gaming setups. |
-| 🛡️ **Anti-Capture (Streamer Mode)** | Hide overlays completely from OBS, Discord stream, Xbox Game Bar, and screenshots (`WDA_EXCLUDEFROMCAPTURE`) while remaining 100% visible on your monitor. |
-| 🔒 **Taskbar & Alt+Tab Stealth** | Hide any overlay or main window from the Windows Taskbar and Alt+Tab application switchers (`WS_EX_TOOLWINDOW`). |
-| 🔒 **Antivirus Hardened** | WIC image loading, Control Flow Guard (`/guard:cf`), ASLR, and DEP enabled (0 detections on VirusTotal). |
-| 📦 **2-File Drop-In Architecture** | Zero complex dependencies—just drop `overlay_manager.h` and `overlay_manager.cpp` into your project! |
+| Feature | Description | Min Windows |
+|---------|-------------|-------------|
+| 🎨 **Acrylic / Mica Blur** | Native DWM hardware blur or Win11 Mica/Acrylic backdrop | Win10 2004+ |
+| 🧲 **Magnetic Edge Snapping** | Windows snap to screen edges and to each other | Win10+ |
+| 🍞 **Multi-Toast Queue** | Stacking, auto-dismissing, thread-safe toast notifications | Win10+ |
+| 🕹️ **Full ImGui Context / Window** | Per-window ImGuiContext for interactive controls | Win10+ |
+| ⌨️ **Global Hotkeys** | Register hotkeys from any thread; background message loop | Win10+ |
+| 🛡️ **Streamer Mode (Anti-Capture)** | Per-window `WDA_EXCLUDEFROMCAPTURE` — invisible to OBS/Discord | Win10 2004+ |
+| 📌 **Taskbar & Alt+Tab Stealth** | Per-window and bulk taskbar/Alt+Tab hide | Win10+ |
+| 🪟 **Multi-Window Hierarchy** | Parent/child cascade, follow-on-drag, close/hide with parent | Win10+ |
+| 🎯 **HWND_TOPMOST** | Always-on-top overlay windows | Win10+ |
+| 🖱️ **Click-Through** | `WS_EX_TRANSPARENT` per-window toggle | Win10+ |
+| 🔁 **Smooth Transitions** | Exponential window resize interpolation | Win10+ |
+| 📐 **Multi-Monitor Aware** | Correct anchor placement on any monitor layout | Win10+ |
 
 ---
 
-## 📦 Project Structure
+## 📁 File Structure
 
 ```
-ImOverlay-DX11/
-├── overlay_manager.h      # Single unified header (Config, Hierarchy, FloatingOverlayWindow, OverlayManager)
-├── overlay_manager.cpp    # Single unified implementation (Win32, DX11 Swapchains, Modal Drag Pump)
-└── README.md              # Full documentation & examples
+overlay_framework/
+├── overlay_manager.h          # Single header — all types, enums, Manager, Window
+├── overlay_manager.cpp        # Full implementation (~2000 lines)
+├── CMakeLists.txt             # CMake static library target
+├── LICENSE                    # MIT License (2026 rabbanyhmm)
+├── README.md                  # This file
+└── examples/
+    └── minimal_demo/
+        ├── main.cpp           # ~100 line complete working demo
+        └── README.md
 ```
 
 ---
 
 ## 🚀 Quick Start
 
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/rabbanyhmm/ImOverlay-DX11.git
-```
-
-### 2. Add to Your Project
-
-Include the header wherever needed:
-
 ```cpp
 #include "overlay_manager.h"
+using namespace ImOverlay;
+
+// In WinMain after D3D11 + ImGui init:
+Manager::Get().Init(hwnd, ImVec2(0, 0), ImVec2(800, 600));
+Manager::Get().SetD3DObjects(swapChain, device, &rtv);
+Manager::Get().SetDXGIFactory(factory);
+
+// Create a floating window with Acrylic blur + magnetic snapping
+Config cfg;
+cfg.window_title        = "My Overlay Tool";
+cfg.size                = ImVec2(300, 140);
+cfg.anchor              = AnchorMode::Screen_BottomRight;
+cfg.enable_acrylic_blur = true;
+cfg.acrylic_type        = AcrylicType::Acrylic;
+cfg.enable_snap         = true;
+
+Manager::Get().CreateFloatingOverlay("my_tool", cfg, [](Window* win, float dt) {
+    ImGui::Text("Hello from ImOverlay-DX11!");
+});
+
+// Push a toast from any thread
+Manager::Get().PushToast("Update", "Initialization complete!", 4.0f);
+
+// Register a global hotkey
+Manager::Get().StartHotkeyListener();
+Manager::Get().RegisterHotkey(1, 0, VK_INSERT, HotkeyAction::ToggleVisibility);
+
+// In render loop:
+Manager::Get().BeginFrame();
+// ... your ImGui rendering ...
+Manager::Get().EndFrame(deltaTime);
 ```
 
-### 3. Initialization in `WinMain`
+---
+
+## 🎨 Feature 1 — Acrylic / Mica DWM Blur
+
+Real hardware-accelerated blur effects behind overlay windows.
+
+| AcrylicType | Effect | Min OS |
+|-------------|--------|--------|
+| `Blur` | Standard DWM blur behind | Win10 2004+ |
+| `Acrylic` | Frosted glass Acrylic backdrop | Win11 22H2+ (Win10 fallback) |
+| `Mica` | Material Mica (integrates desktop wallpaper) | Win11 22H2+ |
+| `MicaAlt` | Mica Alt / tabbed variant | Win11 22H2+ |
 
 ```cpp
-// In your application startup:
-OverlayManager::Get().Init(hwnd, initial_screen_pos, main_menu_size);
-OverlayManager::Get().SetPadding(26.f, 26.f, 26.f, 26.f); // Transparent padding
-OverlayManager::Get().SetTransitionMode(TransitionMode::Smooth, 14.0f);
-OverlayManager::Get().SetTopmost(false); // Main menu normal Z-order
+// At creation time:
+Config cfg;
+cfg.enable_acrylic_blur = true;
+cfg.acrylic_type        = AcrylicType::Mica;     // or Acrylic, Blur, MicaAlt
+cfg.draw_default_card_bg = false;                 // Let DWM show through instead of card bg
 
-// Bind Direct3D swapchain:
-OverlayManager::Get().SetD3DObjects(g_pSwapChain, g_pd3dDevice, &g_mainRenderTargetView);
-OverlayManager::Get().SetDXGIFactory(g_pDXGIFactory);
+// At runtime:
+win->SetAcrylicBlur(true, AcrylicType::Acrylic);
+win->SetAcrylicBlur(false);                       // Remove blur
 ```
 
-### 4. Message Loop (`WndProc`)
+> **Note:** For blur to be visible, your window background must be transparent (clear color `0,0,0,0`) and `WS_EX_LAYERED` must be set — ImOverlay-DX11 handles both automatically.
 
-Add smooth modal drag rendering and hit-testing in your `WndProc`:
+---
+
+## 🧲 Feature 2 — Magnetic Window Snapping
+
+Floating windows snap to screen edges and to each other when dragged within `snap_threshold` pixels.
 
 ```cpp
-LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+Config cfg;
+cfg.enable_snap     = true;   // Default: true
+cfg.snap_threshold  = 18.0f;  // Activation distance in pixels (default: 18)
+
+// Runtime control:
+win->SetSnapEnabled(true);
+win->SetSnapThreshold(24.0f);
+
+// Query snap state:
+if (win->IsSnapped())
 {
-    switch (msg)
-    {
-    case WM_NCHITTEST:
-        return OverlayManager::Get().HandleHitTest(lParam);
-
-    case WM_ENTERSIZEMOVE:
-        ::SetTimer(hWnd, 1001, 15, nullptr); // ~60 FPS modal drag timer
-        return 0;
-
-    case WM_TIMER:
-        if (wParam == 1001)
-        {
-            RenderAppFrame();
-            return 0;
-        }
-        break;
-
-    case WM_MOVING:
-    case WM_MOVE:
-        RenderAppFrame();
-        return 0;
-
-    case WM_EXITSIZEMOVE:
-        ::KillTimer(hWnd, 1001);
-        return 0;
-
-    case WM_SIZE:
-        if (wParam == SIZE_MINIMIZED)
-            OverlayManager::Get().MinimizeAllFloatingOverlays();
-        else if (wParam == SIZE_RESTORED)
-            OverlayManager::Get().RestoreAllFloatingOverlays();
-        return 0;
-
-    case WM_DESTROY:
-        OverlayManager::Get().CloseAllFloatingOverlays();
-        ::PostQuitMessage(0);
-        return 0;
-    }
-    return ::DefWindowProcW(hWnd, msg, wParam, lParam);
+    SnapEdge edge = win->GetSnapEdge();
+    // SnapEdge::Left, Right, Top, Bottom
+    // SnapEdge::Corner_TopLeft/TopRight/BottomLeft/BottomRight
 }
 ```
 
-### 5. Main Render Loop
+---
+
+## 🍞 Feature 3 — Multi-Toast Queue & Stacking Engine
+
+Thread-safe stacking toast notifications. Toasts slide in from the bottom-right, stack upward, and auto-dismiss with a progress bar.
 
 ```cpp
-// Inside your render frame:
-OverlayManager::Get().BeginFrame();
+// From any thread (main or background):
+Manager::Get().PushToast("Download Complete", "v2.1.0 is ready to install.", 5.0f);
+Manager::Get().PushToast("Warning", "CPU usage is high.", 4.0f,
+                         IM_COL32(255, 165, 0, 255)); // Orange accent
 
-// Draw your main ImGui menu
-menu->draw();
+// Dismiss programmatically:
+Manager::Get().DismissToast("Download Complete");
+Manager::Get().DismissAllToasts();
 
-// Update auto-expansion and process all secondary windows
-OverlayManager::Get().EndFrame(io.DeltaTime);
+// Query count:
+size_t count = Manager::Get().GetToastCount();
+```
+
+**Toast caps:** Max 5 stacked toasts by default (`k_max_toasts`). Oldest is evicted when new ones arrive over the cap.
+
+---
+
+## 🕹️ Feature 4 — Per-Window ImGui Context
+
+Enable full interactive Dear ImGui rendering (sliders, inputs, tables, color pickers) inside secondary windows.
+
+```cpp
+Config cfg;
+cfg.enable_imgui_context = true;   // Give this window its own ImGuiContext
+
+Manager::Get().CreateFloatingOverlay("settings", cfg, [](Window* win, float dt) {
+    // Full ImGui controls work here because this window has its own context
+    static float val = 0.5f;
+    ImGui::SliderFloat("Volume", &val, 0.f, 1.f);
+    ImGui::ColorEdit3("Theme", ...);
+    ImGui::InputText("Search", ...);
+});
+```
+
+> **Note:** Font atlas is shared with the main context. Each per-context window gets its own `ImGui_ImplDX11` and `ImGui_ImplWin32` backend state.
+
+---
+
+## ⌨️ Feature 5 — Global Hotkeys
+
+Built-in global hotkey listener using a background message-only HWND thread. Thread-safe registration from any thread.
+
+```cpp
+// Start the listener (spawns background thread once)
+Manager::Get().StartHotkeyListener();
+
+// Built-in actions:
+Manager::Get().RegisterHotkey(1, 0,        VK_INSERT, HotkeyAction::ToggleVisibility);
+Manager::Get().RegisterHotkey(2, MOD_CTRL, VK_F12,    HotkeyAction::ToggleClickThrough);
+Manager::Get().RegisterHotkey(3, MOD_ALT,  VK_F1,     HotkeyAction::ToggleCapture);
+Manager::Get().RegisterHotkey(4, 0,        VK_F9,     HotkeyAction::CollapseAll);
+Manager::Get().RegisterHotkey(5, 0,        VK_F10,    HotkeyAction::RestoreAll);
+
+// Custom callback:
+Manager::Get().RegisterHotkey(6, MOD_CTRL, 'R', HotkeyAction::Custom, []() {
+    // your custom action here
+    Manager::Get().PushToast("Hotkey", "Custom action triggered!", 3.f);
+});
+
+// Unregister:
+Manager::Get().UnregisterHotkey(1);
+Manager::Get().UnregisterAllHotkeys();
+Manager::Get().StopHotkeyListener();
+```
+
+| HotkeyAction | Effect |
+|--------------|--------|
+| `ToggleVisibility` | Show/hide all floating overlays |
+| `ToggleClickThrough` | Toggle click-through on all windows |
+| `ToggleCapture` | Toggle Streamer Mode (OBS invisible) |
+| `CollapseAll` | Minimize all floating windows |
+| `RestoreAll` | Restore all floating windows |
+| `Custom` | Your own `std::function<void()>` callback |
+
+---
+
+## 🛡️ Feature 6 — Streamer Mode (Anti-Capture / OBS Invisible)
+
+Hides individual windows from OBS Studio, Discord screen share, Xbox Game Bar, and screenshots — **while remaining 100% visible on the physical display.**
+
+```cpp
+// Per-window at creation:
+Config cfg;
+cfg.exclude_from_capture = true;
+
+// Per-window runtime toggle:
+win->SetCaptureHidden(true);
+win->SetCaptureHidden(false);
+bool hidden = win->IsCaptureHidden();
+
+// By window ID:
+Manager::Get().SetCaptureHidden("my_tool", true);
+Manager::Get().SetCaptureHidden("stream_chat", false);
+bool hidden = Manager::Get().IsCaptureHidden("my_tool");
+
+// Main menu window:
+Manager::Get().SetMainCaptureHidden(true);
+
+// All windows at once:
+Manager::Get().SetCaptureHiddenAll(true);
+
+// Background monitor (keeps protection alive even if another process tries to disable it):
+Manager::Get().StartCaptureMonitor(1000); // poll every 1000ms
+Manager::Get().StopCaptureMonitor();
+```
+
+> **Requires:** Windows 10 Version 2004 (Build 19041+) for `WDA_EXCLUDEFROMCAPTURE`.
+
+---
+
+## 📐 Window Hierarchy & Cascade Behavior
+
+```cpp
+// Create a main floating window
+Config parent_cfg;
+parent_cfg.size = ImVec2(400, 300);
+Window* parent = Manager::Get().CreateFloatingOverlay("main_panel", parent_cfg, ...);
+
+// Create a child that follows the parent
+Config child_cfg;
+child_cfg.parent_id            = "main_panel";
+child_cfg.anchor               = AnchorMode::RelativeToParentWindow;
+child_cfg.offset_from_parent   = ImVec2(410.f, 0.f); // Right of parent
+child_cfg.close_with_parent    = true;
+child_cfg.follow_parent_movement = true;
+Manager::Get().CreateSubWindow("main_panel", "side_panel", child_cfg, ...);
 ```
 
 ---
 
-## 👨‍👧 Multi-Window & Hierarchy System
+## 🛠️ Build & Integration
 
-### 1. Creating Secondary Floating Windows
+### Option A: Copy 2 Files
+Drop `overlay_manager.h` and `overlay_manager.cpp` directly into your project. Link: `d3d11.lib`, `dxgi.lib`, `dwmapi.lib`.
 
-```cpp
-OverlayConfig config;
-config.window_title = "Secondary Tools Menu";
-config.size = ImVec2(400.f, 300.f);
-config.anchor = AnchorMode::Screen_BottomRight;
-config.is_topmost = true;             // Stay on top of fullscreen games!
-config.hide_from_taskbar = false;     // Show in Windows Taskbar
-config.is_movable = true;             // User can drag it across monitors
-config.duration_seconds = -1.0f;      // Permanent standalone window
-
-auto* sec_window = OverlayManager::Get().CreateFloatingOverlay(
-    "secondary_tools",
-    config,
-    [](FloatingOverlayWindow* win, float delta_time) {
-        // Render any custom ImGui widgets or draw lists here!
-    }
-);
+### Option B: CMake
+```cmake
+add_subdirectory(overlay_framework)
+target_link_libraries(your_app PRIVATE ImOverlay_DX11)
 ```
 
-### 2. Creating Child Sub-Windows Attached to a Parent
-
-```cpp
-OverlayConfig sub_cfg;
-sub_cfg.window_title = "Color Picker Sub-Window";
-sub_cfg.size = ImVec2(240.f, 280.f);
-sub_cfg.close_with_parent = true;      // Auto-close when parent closes!
-sub_cfg.hide_with_parent = true;       // Auto-hide when parent hides!
-sub_cfg.minimize_with_parent = true;   // Auto-minimize when parent minimizes!
-sub_cfg.follow_parent_movement = true; // Auto-follow when parent is dragged!
-
-auto* sub_win = OverlayManager::Get().CreateSubWindow(
-    "secondary_tools",  // Parent ID
-    "color_picker",     // Child ID
-    sub_cfg,
-    [](FloatingOverlayWindow* win, float delta_time) {
-        // Child UI
-    }
-);
-```
-
-### 3. Displaying Detached Progress Cards (with Auto-Dismiss Delay)
-
-```cpp
-OverlayConfig cfg;
-cfg.anchor = AnchorMode::Screen_BottomRight;
-cfg.is_topmost = true;
-cfg.auto_dismiss_on_finish = true;
-cfg.finish_dismiss_delay = 2.0f; // Stays on screen 2.0s at 100% before auto-closing
-
-OverlayManager::Get().ShowDetachedProgress(
-    "Downloading Update",
-    ICON_FA_DOWNLOAD,
-    download_progress, // 0.0f to 1.0f
-    cfg
-);
-```
-
-### 4. Streamer Mode / Anti-Capture Protection (OBS & Discord Invisible)
-
-```cpp
-// 1. Configure per-window to be invisible to screen capture:
-OverlayConfig cfg;
-cfg.exclude_from_capture = true; // Sets WDA_EXCLUDEFROMCAPTURE automatically
-
-// 2. Or toggle capture visibility at runtime:
-win->SetCaptureHidden(true); // Invisible to OBS / Discord / Screenshots
-win->SetCaptureHidden(false); // Visible to capture
-
-// 3. Or toggle all windows globally:
-OverlayManager::Get().SetCaptureHiddenAll(true);
-
-// 4. Start background capture protection monitor:
-OverlayManager::Get().StartCaptureMonitor(1000); // Scans and enforces every 1000ms
-OverlayManager::Get().StopCaptureMonitor();
-```
+### Requirements
+- Windows 10 (1903+) or Windows 11
+- MSVC 2019/2022, C++17
+- Dear ImGui (any recent version with `imgui_internal.h`)
+- `backends/imgui_impl_dx11.h`, `backends/imgui_impl_win32.h`
 
 ---
 
-## 🎛️ API Reference
+## 📦 Examples
 
-### Window Lifecycle & State (`FloatingOverlayWindow`)
-
-```cpp
-auto* win = OverlayManager::Get().GetFloatingOverlay("my_window");
-if (win)
-{
-    // Visibility
-    win->Show();
-    win->Hide();
-    win->SetVisible(true);
-
-    // Minimize / Maximize / Restore
-    win->Minimize();
-    win->Maximize();
-    win->Restore();
-    bool is_min = win->IsMinimized();
-    bool is_max = win->IsMaximized();
-
-    // Modifiers
-    win->SetWindowTitle("Custom Window Title");
-    win->SetTopmost(true);
-    win->SetTaskbarVisible(true);
-    win->SetClickThrough(false);
-    win->SetMovable(true);
-    win->SetOpacity(0.95f);
-    win->SetPosition(100, 100);
-    win->SetSize(500, 400);
-    win->SetCornerRadius(16.0f);
-    win->SetCustomColors(IM_COL32(20, 20, 20, 240), IM_COL32(255, 255, 255, 30));
-
-    // Event Callbacks
-    win->SetOnCloseCallback([](FloatingOverlayWindow* w) { /* On Close */ });
-    win->SetOnMoveCallback([](FloatingOverlayWindow* w, int x, int y) { /* On Move */ });
-    win->SetOnResizeCallback([](FloatingOverlayWindow* w, int w, int h) { /* On Resize */ });
-
-    // Closing
-    win->Close();       // Smooth animated fade out (cascades to children)
-    win->DestroyNow();  // Instant destroy (cascades to children)
-}
-```
-
-### Batch Operations (`OverlayManager`)
-
-```cpp
-OverlayManager::Get().ShowAllFloatingOverlays();
-OverlayManager::Get().HideAllFloatingOverlays();
-OverlayManager::Get().MinimizeAllFloatingOverlays();
-OverlayManager::Get().RestoreAllFloatingOverlays();
-OverlayManager::Get().CloseAllFloatingOverlays();
-
-// Queries
-std::vector<std::string> ids = OverlayManager::Get().GetFloatingOverlayIds();
-std::vector<std::string> children = OverlayManager::Get().GetChildrenOf("parent_id");
-size_t count = OverlayManager::Get().GetFloatingOverlayCount();
-```
+See [`examples/minimal_demo/`](examples/minimal_demo/) for a complete ~100-line standalone demo using all major features.
 
 ---
 
-## 📐 Architecture
+## 📜 License
 
-```
-                                  ┌────────────────────────┐
-                                  │     OverlayManager     │
-                                  │      (Singleton)       │
-                                  └───────────┬────────────┘
-                                              │
-                     ┌────────────────────────┴────────────────────────┐
-                     ▼                                                 ▼
-        ┌─────────────────────────┐                       ┌─────────────────────────┐
-        │       Main Menu         │                       │  FloatingOverlayWindow  │
-        │   (Dynamic Expansion)   │                       │  (Multi-Window Pool)    │
-        └────────────┬────────────┘                       └────────────┬────────────┘
-                     │                                                 │
-          ┌──────────┴──────────┐                            ┌─────────┴─────────┐
-          ▼                     ▼                            ▼                   ▼
-    Smart Click-Thru     60 FPS Modal Drag            Parent Window        Child Sub-Window
-     (HTTRANSPARENT)        (HTCAPTION)               (Independent Z)     (Cascading Events)
-```
-
----
-
-## 🛠️ Building & Requirements
-
-- **Operating System:** Windows 10 / 11 (64-bit)
-- **Compiler:** MSVC with C++20 support (Visual Studio 2022 recommended)
-- **DirectX:** DirectX 11 SDK (`d3d11.lib`, `dxgi.lib`, `d3dcompiler.lib`, `dwmapi.lib`)
-- **UI:** [Dear ImGui](https://github.com/ocornut/imgui)
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
-
----
-
-<div align="center">
-  <b>Developed with ❤️ for high-performance desktop tools & game overlays.</b>
-</div>
+MIT License — © 2026 [rabbanyhmm](https://github.com/rabbanyhmm)
