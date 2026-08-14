@@ -290,8 +290,37 @@ void Window::InitWindow(IDXGIFactory* factory)
         ::SetWindowDisplayAffinity(m_hwnd, WDA_EXCLUDEFROMCAPTURE);
     }
 
-    // Direct3D swapchain creation
-    if (m_device && factory)
+    // Direct3D swapchain creation (auto-resolve factory from device if null)
+    IDXGIFactory* pFactory = factory;
+    bool should_release_factory = false;
+
+    if (!pFactory && m_device)
+    {
+        IDXGIDevice* pDXGIDevice = nullptr;
+        if (SUCCEEDED(m_device->QueryInterface(IID_PPV_ARGS(&pDXGIDevice))))
+        {
+            IDXGIAdapter* pDXGIAdapter = nullptr;
+            if (SUCCEEDED(pDXGIDevice->GetAdapter(&pDXGIAdapter)))
+            {
+                if (SUCCEEDED(pDXGIAdapter->GetParent(IID_PPV_ARGS(&pFactory))))
+                {
+                    should_release_factory = true;
+                }
+                pDXGIAdapter->Release();
+            }
+            pDXGIDevice->Release();
+        }
+
+        if (!pFactory)
+        {
+            if (SUCCEEDED(CreateDXGIFactory(IID_PPV_ARGS(&pFactory))))
+            {
+                should_release_factory = true;
+            }
+        }
+    }
+
+    if (m_device && pFactory)
     {
         DXGI_SWAP_CHAIN_DESC sd;
         ZeroMemory(&sd, sizeof(sd));
@@ -309,7 +338,7 @@ void Window::InitWindow(IDXGIFactory* factory)
         sd.Windowed = TRUE;
         sd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
 
-        if (SUCCEEDED(factory->CreateSwapChain(m_device, &sd, &m_swap_chain)))
+        if (SUCCEEDED(pFactory->CreateSwapChain(m_device, &sd, &m_swap_chain)))
         {
             ID3D11Texture2D* pBackBuffer = nullptr;
             if (SUCCEEDED(m_swap_chain->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer))))
@@ -317,6 +346,12 @@ void Window::InitWindow(IDXGIFactory* factory)
                 m_device->CreateRenderTargetView(pBackBuffer, nullptr, &m_rtv);
                 pBackBuffer->Release();
             }
+        }
+
+        if (should_release_factory && pFactory)
+        {
+            pFactory->Release();
+            pFactory = nullptr;
         }
     }
 
