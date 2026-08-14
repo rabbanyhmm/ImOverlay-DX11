@@ -1552,28 +1552,29 @@ LRESULT Manager::HandleHitTest(LPARAM lParam)
 
     ImVec2 local_pt((float)pt.x, (float)pt.y);
 
+    // 1. Check specific interactive UI sub-elements (like modal dialogs, buttons) before background window
     for (const auto& pair : m_elements)
     {
-        const auto& elem = pair.second;
-        if (!elem.is_active)
+        if (pair.first == "main_menu")
             continue;
 
-        if (elem.rect.Contains(local_pt))
+        const auto& elem = pair.second;
+        if (elem.is_active && elem.is_interactive && elem.rect.Contains(local_pt))
         {
-            if (elem.is_interactive)
-            {
-                if (ImGui::IsAnyItemHovered() || ImGui::IsAnyItemActive())
-                {
-                    return HTCLIENT;
-                }
-
-                if (elem.name == "main_menu")
-                {
-                    return HTCAPTION;
-                }
-                return HTCLIENT;
-            }
+            return HTCLIENT;
         }
+    }
+
+    // 2. Check main window drag surface
+    auto it = m_elements.find("main_menu");
+    if (it != m_elements.end() && it->second.is_active && it->second.rect.Contains(local_pt))
+    {
+        if (ImGui::IsAnyItemHovered() || ImGui::IsAnyItemActive())
+        {
+            return HTCLIENT;
+        }
+
+        return HTCAPTION;
     }
 
     return HTTRANSPARENT;
