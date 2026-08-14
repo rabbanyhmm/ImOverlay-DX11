@@ -165,8 +165,10 @@ enum class AnchorMode
     Relative,               // Relative to main menu
     RelativeToParentWindow, // Relative to a specified parent window
     Screen_TopLeft,         // Fixed at screen top-left
+    Screen_TopCenter,       // Fixed at screen top-center
     Screen_TopRight,        // Fixed at screen top-right
     Screen_BottomLeft,      // Fixed at screen bottom-left
+    Screen_BottomCenter,    // Fixed at screen bottom-center
     Screen_BottomRight,     // Fixed at screen bottom-right
     Screen_Center,          // Fixed at screen center
     Screen_Absolute         // Fixed at absolute screen coordinates
@@ -218,24 +220,21 @@ struct Config
     float corner_radius = 16.0f;        // Border radius
     bool draw_default_card_bg = true;   // Draw glassmorphism background rect
     ImU32 custom_bg_color = IM_COL32(18, 18, 20, 240);       // Dark glass background
-    ImU32 custom_border_color = IM_COL32(255, 255, 255, 30);  // Subtle glass border
-    ImU32 custom_accent_color = IM_COL32(138, 143, 255, 255); // Default accent/primary color
+    ImU32 custom_border_color = IM_COL32(255, 255, 255, 25); // Subtle border
+    ImU32 custom_accent_color = IM_COL32(138, 143, 255, 255); // Primary accent
     ImU32 custom_text_color = IM_COL32(255, 255, 255, 255);   // White text
     ImU32 custom_track_color = IM_COL32(255, 255, 255, 12);   // Progress track
-    float border_thickness = 1.0f;      // Border outline thickness
+    float border_thickness = 1.0f;
+    float accent_alpha = 1.0f;          // Opacity of the left accent bar
 
-    // --- Feature 1: Acrylic / Mica DWM Blur ---
-    bool enable_acrylic_blur = false;   // Apply DWM hardware blur behind this window
-    AcrylicType acrylic_type = AcrylicType::Acrylic; // Blur style (requires Win10+/Win11+)
+    // Acrylic & Snapping Configuration
+    bool enable_acrylic_blur = false;
+    AcrylicType acrylic_type = AcrylicType::Acrylic;
+    bool enable_snap = true;
+    float snap_threshold = 18.0f;       // Distance in pixels to trigger edge snap
+    bool play_snap_sound = false;       // Optional audio feedback on snap
 
-    // --- Feature 2: Magnetic Edge Snapping ---
-    bool enable_snap = true;            // Enable magnetic edge snapping when dragging
-    float snap_threshold = 18.0f;       // Snap activation distance in pixels
-
-    // --- Feature 4: Per-Window ImGui Context ---
-    bool enable_imgui_context = false;  // Give this window its own ImGuiContext (for full interactive ImGui UI)
-
-    // Optional Font Pointers (if null, uses default ImGui font)
+    // Typography
     ImFont* custom_font = nullptr;
     ImFont* custom_icon_font = nullptr;
 };
@@ -258,6 +257,8 @@ public:
 
     // Custom UI Rendering Logic
     void SetRenderCallback(RenderCallback callback) { m_render_callback = callback; }
+
+    ImDrawList* GetDrawList() const { return m_current_draw_list; }
 
     // Progress State (for built-in progress card renderer)
     void SetProgressData(const std::string& title, const std::string& icon, float progress)
@@ -434,6 +435,7 @@ private:
 
     // Feature 4: per-window ImGui context
     ImGuiContext* m_imgui_context = nullptr;
+    ImDrawList* m_current_draw_list = nullptr;
 
     RenderCallback m_render_callback = nullptr;
     EventCallback m_on_close_cb = nullptr;

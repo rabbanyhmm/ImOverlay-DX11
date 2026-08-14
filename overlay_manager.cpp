@@ -168,11 +168,17 @@ void Window::CalculateScreenPosition(const ImVec2& margin)
     case AnchorMode::Screen_TopLeft:
         m_target_screen_pos = ImVec2(work_x + margin.x, work_y + margin.y);
         break;
+    case AnchorMode::Screen_TopCenter:
+        m_target_screen_pos = ImVec2(work_x + (work_w - m_window_size.x) * 0.5f, work_y + margin.y);
+        break;
     case AnchorMode::Screen_TopRight:
         m_target_screen_pos = ImVec2(work_x + work_w - m_window_size.x - margin.x, work_y + margin.y);
         break;
     case AnchorMode::Screen_BottomLeft:
         m_target_screen_pos = ImVec2(work_x + margin.x, work_y + work_h - m_window_size.y - margin.y);
+        break;
+    case AnchorMode::Screen_BottomCenter:
+        m_target_screen_pos = ImVec2(work_x + (work_w - m_window_size.x) * 0.5f, work_y + work_h - m_window_size.y - margin.y);
         break;
     case AnchorMode::Screen_BottomRight:
         m_target_screen_pos = ImVec2(work_x + work_w - m_window_size.x - margin.x,
@@ -894,6 +900,7 @@ void Window::Render()
     draw_list.PushTextureID(ImGui::GetIO().Fonts->TexID);
     draw_list.PushClipRect(ImVec2(0.f, 0.f), m_window_size, false);
 
+    m_current_draw_list = &draw_list;
     if (m_render_callback)
     {
         m_render_callback(this, ctx->IO.DeltaTime);
@@ -902,6 +909,7 @@ void Window::Render()
     {
         RenderBuiltinProgress(&draw_list);
     }
+    m_current_draw_list = nullptr;
 
     draw_list.PopClipRect();
     draw_list.PopTextureID();
