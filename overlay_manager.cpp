@@ -1145,7 +1145,6 @@ LRESULT CALLBACK Window::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
             if (prc)
             {
                 self->m_current_screen_pos = ImVec2((float)prc->left, (float)prc->top);
-                self->Render();
             }
         }
         return 0;
@@ -1168,7 +1167,6 @@ LRESULT CALLBACK Window::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
                     child->OnParentMoved(rc.left, rc.top);
                 }
             }
-            self->Render();
         }
         return 0;
 

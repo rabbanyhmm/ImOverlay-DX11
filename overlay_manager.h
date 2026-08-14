@@ -230,7 +230,7 @@ struct Config
     // Acrylic & Snapping Configuration
     bool enable_acrylic_blur = false;
     AcrylicType acrylic_type = AcrylicType::Acrylic;
-    bool enable_snap = true;
+    bool enable_snap = false;           // Magnetic snapping disabled by default for 1:1 zero-lag drag
     float snap_threshold = 18.0f;       // Distance in pixels to trigger edge snap
     bool play_snap_sound = false;       // Optional audio feedback on snap
 
