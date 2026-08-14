@@ -18,4 +18,5 @@ target_link_libraries(ImOverlay-DX11 PUBLIC
     dxgi
     d3dcompiler
     dwmapi
+    uxtheme
 )
