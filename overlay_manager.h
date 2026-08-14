@@ -265,7 +265,20 @@ public:
         m_title = title;
         m_icon = icon;
         m_progress = progress;
+        m_message.clear();
     }
+
+    // Toast State (for built-in toast notification card renderer)
+    void SetToastData(const std::string& title, const std::string& message, ImU32 accent = IM_COL32(138, 143, 255, 255))
+    {
+        m_title = title;
+        m_message = message;
+        m_toast_accent = accent;
+        m_config.custom_accent_color = accent;
+    }
+
+    const std::string& GetTitle() const { return m_title; }
+    const std::string& GetMessage() const { return m_message; }
 
     void SetAutoDismissOnFinish(bool enable, float delay_seconds = 2.0f)
     {
@@ -411,7 +424,9 @@ private:
     float m_anim_progress = 0.0f;
 
     std::string m_title;
+    std::string m_message;
     std::string m_icon;
+    ImU32 m_toast_accent = IM_COL32(138, 143, 255, 255);
     float m_progress = 0.0f;
     float m_finish_timer = 0.0f;
 
