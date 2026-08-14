@@ -1,33 +1,82 @@
-//     ___           ___                 _               ____  _  ___ _
-//    |_ _|  _ __   / _ \__   _____ _ __| | __ _ _   _  |  _ \\ \/ / / |
-//     | |  | '_ \ | | | \ \ / / _ \ '__| |/ _` | | | | | | | |\  /| | |
-//     | |  | | | || |_| |\ V /  __/ |  | | (_| | |_| | | |_| |/  \| | |
-//    |___|  |_| |_| \___/  \_/ \___|_|  |_|\__,_|\__, | |____//_/\_\_|_|
-//                                                 |___/
+//        ___       ___              _           _____  ___ _ 
+//       |_ _|_ __ / _ \__ _____ _ _| |__ _ _  _|   \ \/ / / |
+//        | || '  \ (_) \ V / -_) '_| / _` | || | |) >  <| | |
+//       |___|_|_|_\___/ \_/\___|_| |_\__,_|\_, |___/_/\_\_|_|
+//                                    |__/              
 //
-//  Hardware-Accelerated Desktop Overlay & Multi-Window Framework
-//  Built on Dear ImGui + Direct3D 11 for Windows 10/11
-//
-//  version 1.0.0
+//  ImOverlay-DX11: Hardware-Accelerated Desktop Overlay & Multi-Window Framework
+//  version 1.0.0 (Release Build: 2026-08-14)
 //  https://github.com/rabbanyhmm/ImOverlay-DX11
 //
 //  SPDX-FileCopyrightText: 2026 rabbanyhmm <https://github.com/rabbanyhmm>
 //  SPDX-License-Identifier: MIT
+
+/****************************************************************************\
+ *                                                                          *
+ *  Note on Documentation and Architecture:                                 *
+ *  --------------------------------------                                  *
+ *  ImOverlay-DX11 is a standalone, lightweight, multi-window overlay       *
+ *  framework written for Direct3D 11 and Dear ImGui on Windows 10/11.      *
+ *                                                                          *
+ *  Key Capabilities:                                                       *
+ *  - 2-File Architecture: Drop 'overlay_manager.h' and '.cpp' into your    *
+ *    project with zero third-party dependencies beyond Win32 + ImGui.      *
+ *  - Hardware-Accelerated DWM Blur: Real Acrylic and Mica frosted-glass.   *
+ *  - Magnetic Window Snapping: Smart edge & inter-window auto-docking.     *
+ *  - Streamer Mode (Anti-Capture): Per-window WDA_EXCLUDEFROMCAPTURE to   *
+ *    stay completely invisible to OBS, Discord, and screen recording apps. *
+ *  - Multi-Toast Queue: Thread-safe, stacked notifications with slide-in.  *
+ *  - Global Hotkeys: Non-blocking background listener for gaming hotkeys.  *
+ *  - Sub-Window Hierarchy: Cascading close/hide/minimize and drag-follow.  *
+ *                                                                          *
+ *  Official Repository & Issue Tracker:                                    *
+ *  https://github.com/rabbanyhmm/ImOverlay-DX11.git                        *
+ *                                                                          *
+\****************************************************************************/
+
+#ifndef IMOVERLAY_DX11_HPP_
+#define IMOVERLAY_DX11_HPP_
+
 #pragma once
 
 // ============================================================================
-// Version
+// Version Definitions & Metadata
 // ============================================================================
-#define IMOVERLAY_VERSION       "1.0.0"
 #define IMOVERLAY_VERSION_MAJOR 1
 #define IMOVERLAY_VERSION_MINOR 0
 #define IMOVERLAY_VERSION_PATCH 0
+#define IMOVERLAY_VERSION_BUILD 20260814
+#define IMOVERLAY_VERSION       "1.0.0"
+#define IMOVERLAY_VERSION_NUMBER \
+    (IMOVERLAY_VERSION_MAJOR * 10000 + IMOVERLAY_VERSION_MINOR * 100 + IMOVERLAY_VERSION_PATCH)
 
 // ============================================================================
-// ImOverlay-DX11: Hardware-Accelerated Desktop Overlay & Multi-Window Framework
-// Repository: https://github.com/rabbanyhmm/ImOverlay-DX11.git
-// License: MIT
+// Compiler & Platform Checks
 // ============================================================================
+#if !defined(_WIN32) && !defined(_WIN64)
+    #error "ImOverlay-DX11 is only supported on Windows platforms (Windows 10 / Windows 11)."
+#endif
+
+#if defined(_MSVC_LANG) && _MSVC_LANG < 201703L
+    #pragma message("Warning: ImOverlay-DX11 recommends C++17 or higher.")
+#elif !defined(_MSVC_LANG) && __cplusplus < 201703L
+    #pragma message("Warning: ImOverlay-DX11 recommends C++17 or higher.")
+#endif
+
+// Suppress known benign compiler warnings across toolchains
+#if defined(_MSC_VER)
+    #pragma warning(push)
+    #pragma warning(disable: 4201) // nonstandard extension used: nameless struct/union
+    #pragma warning(disable: 4100) // unreferenced formal parameter
+#elif defined(__clang__)
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wunused-parameter"
+#elif defined(__GNUC__)
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wunused-parameter"
+#endif
+
+// Win32 & Direct3D 11 Headers
 
 #include <windows.h>
 #include <d3d11.h>
@@ -620,3 +669,17 @@ using OverlayConfig = ImOverlay::Config;
 using OverlayElement = ImOverlay::Element;
 using AnchorMode = ImOverlay::AnchorMode;
 using TransitionMode = ImOverlay::TransitionMode;
+using AcrylicType = ImOverlay::AcrylicType;
+using SnapEdge = ImOverlay::SnapEdge;
+using HotkeyAction = ImOverlay::HotkeyAction;
+
+#if defined(_MSC_VER)
+    #pragma warning(pop)
+#elif defined(__clang__)
+    #pragma clang diagnostic pop
+#elif defined(__GNUC__)
+    #pragma GCC diagnostic pop
+#endif
+
+#endif // IMOVERLAY_DX11_HPP_
+

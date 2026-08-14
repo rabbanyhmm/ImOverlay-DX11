@@ -1,18 +1,35 @@
-//     ___           ___                 _               ____  _  ___ _
-//    |_ _|  _ __   / _ \__   _____ _ __| | __ _ _   _  |  _ \\ \/ / / |
-//     | |  | '_ \ | | | \ \ / / _ \ '__| |/ _` | | | | | | | |\  /| | |
-//     | |  | | | || |_| |\ V /  __/ |  | | (_| | |_| | | |_| |/  \| | |
-//    |___|  |_| |_| \___/  \_/ \___|_|  |_|\__,_|\__, | |____//_/\_\_|_|
-//                                                 |___/
+//        ___       ___              _           _____  ___ _ 
+//       |_ _|_ __ / _ \__ _____ _ _| |__ _ _  _|   \ \/ / / |
+//        | || '  \ (_) \ V / -_) '_| / _` | || | |) >  <| | |
+//       |___|_|_|_\___/ \_/\___|_| |_\__,_|\_, |___/_/\_\_|_|
+//                                    |__/              
 //
-//  ImOverlay-DX11 — Implementation
+//  ImOverlay-DX11: Hardware-Accelerated Desktop Overlay & Multi-Window Framework
+//  Implementation Source File (Version 1.0.0)
 //  https://github.com/rabbanyhmm/ImOverlay-DX11
 //
 //  SPDX-FileCopyrightText: 2026 rabbanyhmm <https://github.com/rabbanyhmm>
 //  SPDX-License-Identifier: MIT
+
+/****************************************************************************\
+ *                                                                          *
+ *  ImOverlay-DX11 Core Implementation Details:                             *
+ *  ------------------------------------------                              *
+ *  - DWM Composition & Backdrop: Integrates Windows 11 DWMWA_SYSTEMBACKDROP*
+ *    and Windows 10 SetWindowCompositionAttribute for hardware blur.       *
+ *  - Screen Capture Exclusion: Applies WDA_EXCLUDEFROMCAPTURE per HWND.    *
+ *  - Magnetic Snapping: Intercepts WM_MOVING for smooth border docking.    *
+ *  - Multi-Toast Queue: Lock-guarded circular buffer with slide animation. *
+ *  - Global Hotkeys: Spawns dedicated message-only HWND pump thread.       *
+ *                                                                          *
+ *  See overlay_manager.h for the full public API declarations.             *
+ *                                                                          *
+\****************************************************************************/
+
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+
 #include "overlay_manager.h"
 #include "backends/imgui_impl_dx11.h"
 #include "backends/imgui_impl_win32.h"
