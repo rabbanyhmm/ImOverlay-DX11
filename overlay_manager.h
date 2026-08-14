@@ -642,18 +642,24 @@ private:
     };
     std::deque<ToastEntry> m_toast_queue;
     std::mutex             m_toast_mutex;
-    static constexpr int   k_max_toasts    = 5;
-    static constexpr float k_toast_spacing = 12.f;
-    static constexpr float k_toast_w       = 320.f;
-    static constexpr float k_toast_h       = 68.f;
-    static constexpr float k_toast_margin  = 20.f;
-    HWND  m_toast_hwnd    = nullptr;
-    IDXGISwapChain*         m_toast_swap_chain = nullptr;
-    ID3D11RenderTargetView* m_toast_rtv        = nullptr;
+    struct ToastItem
+    {
+        std::string id;
+        std::string title;
+        std::string message;
+        float duration = 4.0f;
+        float time_alive = 0.0f;
+        float alpha = 0.0f;
+        bool closing = false;
+        ImU32 accent = IM_COL32(138, 143, 255, 255);
+        AnchorMode anchor = AnchorMode::Screen_BottomRight;
+    };
+    std::vector<ToastItem> m_toasts;
+    std::mutex m_toasts_mutex;
+    uint32_t m_toast_counter = 0;
 
     void UpdateToasts(float delta_time);
     void RenderToasts();
-    void EnsureToastWindow();
 
     // -------------------------------------------------------------------------
     // Feature 5: Global Hotkey Listener

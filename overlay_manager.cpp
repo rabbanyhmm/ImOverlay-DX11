@@ -1524,6 +1524,7 @@ void Manager::EndFrame(float delta_time)
     }
 
     UpdateToasts(delta_time);
+    RenderToasts();
     UpdateFloatingOverlays(delta_time);
 }
 
@@ -1817,82 +1818,150 @@ void Manager::UpdateFloatingOverlays(float delta_time)
 void Manager::PushToast(const std::string& title, const std::string& message,
                         float duration, ImU32 accent, AnchorMode anchor)
 {
-    static int toast_counter = 0;
-    std::string id = "toast_" + std::to_string(++toast_counter);
-
-    // Count currently active toast windows to calculate vertical stack offset
-    int active_toasts = 0;
-    for (const auto& ov : m_floating_overlays)
-    {
-        if (ov && ov->GetId().rfind("toast_", 0) == 0 && ov->IsAlive())
-            active_toasts++;
-    }
-
-    Config cfg;
-    cfg.window_title = "Notification";
-    cfg.anchor = anchor;
-    cfg.size = ImVec2(320.f, 68.f);
-    cfg.padding = ImVec4(12.f, 12.f, 12.f, 12.f);
-    cfg.duration_seconds = duration > 0.f ? duration : 4.0f;
-    cfg.is_topmost = true;
-    cfg.hide_from_taskbar = true;
-    cfg.is_click_through = false;
-    cfg.is_movable = true;
-    cfg.draw_default_card_bg = true;
-    cfg.custom_accent_color = accent;
-
-    // Stack vertically from bottom corner
-    float stack_offset_y = 20.f + (float)(active_toasts % 6) * (cfg.size.y + cfg.padding.y + cfg.padding.w + 8.f);
-
-    Window* toast_win = CreateFloatingOverlay(id, cfg, nullptr);
-    if (toast_win)
-    {
-        toast_win->SetToastData(title, message, accent);
-        toast_win->SetAnchor(anchor, ImVec2(20.f, stack_offset_y));
-        toast_win->Show();
-    }
+    std::lock_guard<std::mutex> lock(m_toasts_mutex);
+    ToastItem item;
+    item.id = "toast_" + std::to_string(++m_toast_counter);
+    item.title = title;
+    item.message = message;
+    item.duration = duration > 0.0f ? duration : 4.0f;
+    item.time_alive = 0.0f;
+    item.alpha = 0.0f;
+    item.closing = false;
+    item.accent = accent;
+    item.anchor = anchor;
+    m_toasts.push_back(std::move(item));
 }
 
 void Manager::DismissToast(const std::string& title)
 {
-    for (auto& ov : m_floating_overlays)
+    std::lock_guard<std::mutex> lock(m_toasts_mutex);
+    for (auto& t : m_toasts)
     {
-        if (ov && ov->IsAlive() && ov->GetTitle() == title)
-        {
-            ov->Close();
-        }
+        if (t.title == title)
+            t.closing = true;
     }
 }
 
 void Manager::DismissAllToasts()
 {
-    for (auto& ov : m_floating_overlays)
-    {
-        if (ov && ov->IsAlive() && ov->GetId().rfind("toast_", 0) == 0)
-        {
-            ov->Close();
-        }
-    }
+    std::lock_guard<std::mutex> lock(m_toasts_mutex);
+    for (auto& t : m_toasts)
+        t.closing = true;
 }
 
 size_t Manager::GetToastCount() const
 {
-    size_t count = 0;
-    for (const auto& ov : m_floating_overlays)
-    {
-        if (ov && ov->IsAlive() && ov->GetId().rfind("toast_", 0) == 0)
-            count++;
-    }
-    return count;
+    return m_toasts.size();
 }
 
 void Manager::UpdateToasts(float delta_time)
 {
-    (void)delta_time;
+    std::lock_guard<std::mutex> lock(m_toasts_mutex);
+    for (auto it = m_toasts.begin(); it != m_toasts.end();)
+    {
+        auto& toast = *it;
+        toast.time_alive += delta_time;
+
+        if (toast.closing || (toast.duration > 0.0f && toast.time_alive >= toast.duration))
+        {
+            toast.closing = true;
+            toast.alpha -= delta_time * 6.0f;
+            if (toast.alpha <= 0.0f)
+            {
+                it = m_toasts.erase(it);
+                continue;
+            }
+        }
+        else
+        {
+            if (toast.alpha < 1.0f)
+            {
+                toast.alpha += delta_time * 6.0f;
+                if (toast.alpha > 1.0f)
+                    toast.alpha = 1.0f;
+            }
+        }
+        ++it;
+    }
 }
 
 void Manager::RenderToasts()
 {
+    if (m_toasts.empty())
+        return;
+
+    ImGuiContext* ctx = ImGui::GetCurrentContext();
+    if (!ctx)
+        return;
+
+    ImDrawList* draw_list = ImGui::GetForegroundDrawList();
+    if (!draw_list)
+        return;
+
+    ImGuiIO& io = ImGui::GetIO();
+    float card_w = 320.0f;
+    float card_h = 70.0f;
+    float margin_x = 24.0f;
+    float margin_y = 24.0f;
+    float gap = 10.0f;
+
+    std::lock_guard<std::mutex> lock(m_toasts_mutex);
+    int count = (int)m_toasts.size();
+
+    for (int i = 0; i < count; ++i)
+    {
+        // Dynamic Upward Stacking:
+        // Slot 0 = newest toast (at bottom-right corner)
+        // Slot 1, 2... = older unfinished toasts (stacked above)
+        int slot = (count - 1) - i;
+        const auto& toast = m_toasts[i];
+
+        float x = io.DisplaySize.x - card_w - margin_x;
+        float y = io.DisplaySize.y - card_h - margin_y - (float)slot * (card_h + gap);
+
+        ImVec2 p_min(x, y);
+        ImVec2 p_max(x + card_w, y + card_h);
+
+        ImU32 bg_color = IM_COL32(18, 18, 22, (int)(240.0f * toast.alpha));
+        ImU32 border_color = IM_COL32(50, 50, 60, (int)(200.0f * toast.alpha));
+        ImU32 text_color = IM_COL32(255, 255, 255, (int)(255.0f * toast.alpha));
+        ImU32 desc_color = IM_COL32(180, 180, 190, (int)(220.0f * toast.alpha));
+        
+        ImU32 accent_color = (toast.accent & 0x00FFFFFF) | ((ImU32)(255.0f * toast.alpha) << 24);
+
+        // Glassmorphism card background & border
+        draw_list->AddRectFilled(p_min, p_max, bg_color, 12.0f);
+        draw_list->AddRect(p_min, p_max, border_color, 12.0f, 0, 1.0f);
+
+        // Left accent indicator
+        draw_list->AddRectFilled(p_min, ImVec2(p_min.x + 4.0f, p_max.y), accent_color, 12.0f, ImDrawFlags_RoundCornersLeft);
+
+        // Title
+        ImFont* font = ImGui::GetFont();
+        ImVec2 title_pos(p_min.x + 16.0f, p_min.y + 12.0f);
+        if (font)
+            draw_list->AddText(font, font->FontSize, title_pos, text_color, toast.title.c_str());
+        else
+            draw_list->AddText(title_pos, text_color, toast.title.c_str());
+
+        // Message
+        ImVec2 msg_pos(p_min.x + 16.0f, p_min.y + 32.0f);
+        if (font)
+            draw_list->AddText(font, font->FontSize * 0.9f, msg_pos, desc_color, toast.message.c_str());
+        else
+            draw_list->AddText(msg_pos, desc_color, toast.message.c_str());
+
+        // Countdown progress bar
+        if (toast.duration > 0.0f)
+        {
+            float countdown = std::clamp(1.0f - (toast.time_alive / toast.duration), 0.0f, 1.0f);
+            float track_w = card_w - 32.0f;
+            ImVec2 bar_pos(p_min.x + 16.0f, p_max.y - 6.0f);
+            ImU32 track_col = IM_COL32(40, 40, 48, (int)(180.0f * toast.alpha));
+            draw_list->AddRectFilled(bar_pos, ImVec2(bar_pos.x + track_w, bar_pos.y + 2.0f), track_col, 1.0f);
+            draw_list->AddRectFilled(bar_pos, ImVec2(bar_pos.x + track_w * countdown, bar_pos.y + 2.0f), accent_color, 1.0f);
+        }
+    }
 }
 
 // ============================================================================
