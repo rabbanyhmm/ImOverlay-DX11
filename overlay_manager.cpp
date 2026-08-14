@@ -947,7 +947,7 @@ void Window::Render()
         context->RSSetViewports(1, &vp);
 
         ImGui_ImplDX11_RenderDrawData(&draw_data);
-        m_swap_chain->Present(1, 0);
+        m_swap_chain->Present(0, 0);
 
         // Restore previous render target & viewport
         context->OMSetRenderTargets(1, &prev_rtv, prev_dsv);
