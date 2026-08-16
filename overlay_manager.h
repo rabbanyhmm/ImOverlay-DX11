@@ -194,6 +194,7 @@ struct Config
     ImVec4 padding = ImVec4(16.f, 16.f, 16.f, 16.f);    // Transparent margin buffer
 
     bool is_topmost = true;             // Stay above full-screen games/apps (HWND_TOPMOST)
+    bool topmost = true;                // Alias for is_topmost
     bool hide_from_taskbar = true;      // Hide from taskbar and Alt+Tab (WS_EX_TOOLWINDOW)
     bool exclude_from_capture = false;  // Streamer Mode: Hide from OBS/Discord/Screenshots (WDA_EXCLUDEFROMCAPTURE)
     bool is_movable = true;             // Draggable anywhere by user (HTCAPTION)

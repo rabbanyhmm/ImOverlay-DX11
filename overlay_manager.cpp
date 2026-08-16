@@ -232,6 +232,9 @@ void Window::InitWindow(IDXGIFactory* factory)
 
     CalculateScreenPosition();
 
+    if (!m_config.topmost)
+        m_config.is_topmost = false;
+
     DWORD ex_style = WS_EX_LAYERED;
     if (m_config.is_topmost)
         ex_style |= WS_EX_TOPMOST;
