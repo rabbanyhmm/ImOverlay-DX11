@@ -727,5 +727,9 @@ using HotkeyAction = ImOverlay::HotkeyAction;
     #pragma GCC diagnostic pop
 #endif
 
+#if defined(IMOVERLAY_IMPLEMENTATION) || defined(IMOVERLAY_HEADER_ONLY)
+#include "overlay_manager.cpp"
+#endif
+
 #endif // IMOVERLAY_DX11_HPP_
 
