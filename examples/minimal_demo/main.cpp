@@ -1,4 +1,4 @@
-﻿// =============================================================================
+// =============================================================================
 // ImOverlay-DX11 — Minimal Demo
 // Demonstrates the minimum code to create a floating overlay with toasts,
 // Acrylic blur, magnetic snapping, and a global hotkey.
@@ -9,6 +9,9 @@
 #include <windows.h>
 #include <d3d11.h>
 #include <dxgi.h>
+#include "imgui.h"
+#include "backends/imgui_impl_win32.h"
+#include "backends/imgui_impl_dx11.h"
 #include "../../overlay_manager.h"  // ImOverlay-DX11
 
 #pragma comment(lib, "d3d11.lib")

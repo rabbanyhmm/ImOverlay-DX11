@@ -100,6 +100,7 @@
 #pragma comment(lib, "d3dcompiler.lib")
 #pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "uxtheme.lib")
+#pragma comment(lib, "winmm.lib")
 #endif
 
 #ifndef WDA_NONE
