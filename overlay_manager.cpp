@@ -1,6 +1,16 @@
-// ImOverlay-DX11: Desktop overlay & multi-window framework for DirectX 11 and Dear ImGui
-// https://github.com/rabbanyhmm/ImOverlay-DX11
-// SPDX-License-Identifier: MIT
+//        ___       ___              _           _____  ___ _ 
+//       |_ _|_ __ / _ \__ _____ _ _| |__ _ _  _|   \ \/ / / |
+//        | || '  \ (_) \ V / -_) '_| / _` | || | |) >  <| | |
+//       |___|_|_|_\___/ \_/\___|_| |_\__,_|\_, |___/_/\_\_|_|
+//                                    |__/              
+//
+//  ImOverlay-DX11: Hardware-Accelerated Desktop Overlay & Multi-Window Framework
+//  Implementation Source File (Version 1.0.0)
+//  https://github.com/rabbanyhmm/ImOverlay-DX11
+//
+//  SPDX-FileCopyrightText: 2026 rabbanyhmm <https://github.com/rabbanyhmm>
+//  SPDX-License-Identifier: MIT
+
 
 
 #ifndef NOMINMAX
