@@ -2,7 +2,7 @@
 //       |_ _|_ __ / _ \__ _____ _ _| |__ _ _  _|   \ \/ / / |
 //        | || '  \ (_) \ V / -_) '_| / _` | || | |) >  <| | |
 //       |___|_|_|_\___/ \_/\___|_| |_\__,_|\_, |___/_/\_\_|_|
-//                                    |__/              
+//                                          |__/              
 //
 //  ImOverlay-DX11: Hardware-Accelerated Desktop Overlay & Multi-Window Framework
 //  Implementation Source File (Version 1.0.0)
