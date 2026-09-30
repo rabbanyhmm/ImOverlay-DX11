@@ -2,7 +2,6 @@
 // https://github.com/rabbanyhmm/ImOverlay-DX11
 // SPDX-License-Identifier: MIT
 
-
 #ifndef IMOVERLAY_DX11_HPP_
 #define IMOVERLAY_DX11_HPP_
 
