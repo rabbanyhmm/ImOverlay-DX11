@@ -12,6 +12,7 @@
 //  SPDX-License-Identifier: MIT
 
 
+
 #ifndef IMOVERLAY_DX11_HPP_
 #define IMOVERLAY_DX11_HPP_
 
@@ -50,9 +51,14 @@
     #pragma GCC diagnostic ignored "-Wunused-parameter"
 #endif
 
-// Win32 & Direct3D 11 Headers
-
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
 #include <windows.h>
+#include <timeapi.h>
 #include <d3d11.h>
 #include <dxgi.h>
 #include <string>
@@ -221,6 +227,7 @@ public:
     using RenderCallback = std::function<void(Window* window, float delta_time)>;
     using EventCallback = std::function<void(Window* window)>;
     using MoveCallback = std::function<void(Window* window, int x, int y)>;
+    using DragEndCallback = std::function<void(Window* window, int x, int y)>;
     using ResizeCallback = std::function<void(Window* window, int w, int h)>;
 
     Window(const std::string& id, ID3D11Device* device, IDXGIFactory* factory,
@@ -304,6 +311,8 @@ public:
     ImVec2 GetWindowSize() const { return m_window_size; }
 
     void SetAnchor(AnchorMode anchor, const ImVec2& margin = ImVec2(24.f, 24.f));
+    void SetTargetScreenPosition(float x, float y);
+    ImVec2 GetTargetScreenPosition() const { return m_target_screen_pos; }
     void SetOpacity(float alpha);
     float GetOpacity() const { return m_alpha; }
 
@@ -349,6 +358,7 @@ public:
     // Callbacks
     void SetOnCloseCallback(EventCallback cb) { m_on_close_cb = cb; }
     void SetOnMoveCallback(MoveCallback cb) { m_on_move_cb = cb; }
+    void SetOnDragEndCallback(DragEndCallback cb) { m_on_drag_end_cb = cb; }
     void SetOnResizeCallback(ResizeCallback cb) { m_on_resize_cb = cb; }
 
     // Smooth Close (animates out and cascades to children) vs Instant Destroy
@@ -391,6 +401,8 @@ private:
 
     bool m_is_alive = true;
     bool m_closing = false;
+    bool m_is_user_dragging = false;
+    bool m_is_toast = false;
 
     float m_time_alive = 0.0f;
     float m_alpha = 1.0f;
@@ -410,6 +422,7 @@ private:
     RenderCallback m_render_callback = nullptr;
     EventCallback m_on_close_cb = nullptr;
     MoveCallback m_on_move_cb = nullptr;
+    DragEndCallback m_on_drag_end_cb = nullptr;
     ResizeCallback m_on_resize_cb = nullptr;
 };
 

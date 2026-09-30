@@ -18,8 +18,13 @@
 #endif
 
 #include "overlay_manager.h"
+#if __has_include("backends/imgui_impl_dx11.h")
 #include "backends/imgui_impl_dx11.h"
 #include "backends/imgui_impl_win32.h"
+#else
+#include "imgui_impl_dx11.h"
+#include "imgui_impl_win32.h"
+#endif
 #include <iostream>
 #include <dwmapi.h>
 #include <algorithm>
@@ -215,10 +220,19 @@ void Window::InitWindow(IDXGIFactory* factory)
 
     CalculateScreenPosition();
 
+    if (m_id.rfind("toast_", 0) == 0)
+    {
+        m_is_toast = true;
+        m_anim_progress = 0.0f;
+        m_alpha = 0.0f;
+        m_current_screen_pos.x = m_target_screen_pos.x - 90.0f;
+        m_current_screen_pos.y = m_target_screen_pos.y;
+    }
+
     if (!m_config.topmost)
         m_config.is_topmost = false;
 
-    DWORD ex_style = WS_EX_LAYERED;
+    DWORD ex_style = WS_EX_LAYERED | WS_EX_NOACTIVATE;
     if (m_config.is_topmost)
         ex_style |= WS_EX_TOPMOST;
 
@@ -263,11 +277,8 @@ void Window::InitWindow(IDXGIFactory* factory)
 
     MARGINS margins = { -1 };
     ::DwmExtendFrameIntoClientArea(m_hwnd, &margins);
-    if (m_alpha < 1.0f)
-    {
-        BYTE byte_alpha = (BYTE)(m_alpha * 255.f);
-        ::SetLayeredWindowAttributes(m_hwnd, 0, byte_alpha, LWA_ALPHA);
-    }
+    BYTE byte_alpha = (BYTE)(std::clamp(m_alpha, 0.0f, 1.0f) * 255.f);
+    ::SetLayeredWindowAttributes(m_hwnd, 0, byte_alpha, LWA_ALPHA);
 
     // Screen Capture Exclusion (Streamer Mode)
     if (m_config.exclude_from_capture && m_hwnd)
@@ -717,7 +728,20 @@ void Window::SetAnchor(AnchorMode anchor, const ImVec2& margin)
 {
     m_config.anchor = anchor;
     CalculateScreenPosition(margin);
-    SetPosition((int)m_target_screen_pos.x, (int)m_target_screen_pos.y);
+    if (m_is_toast)
+    {
+        // For toasts, set target and let it smoothly interpolate rather than teleporting!
+        m_target_screen_pos = ImVec2(m_target_screen_pos.x, m_target_screen_pos.y);
+    }
+    else
+    {
+        SetPosition((int)m_target_screen_pos.x, (int)m_target_screen_pos.y);
+    }
+}
+
+void Window::SetTargetScreenPosition(float x, float y)
+{
+    m_target_screen_pos = ImVec2(x, y);
 }
 
 void Window::SetOpacity(float alpha)
@@ -829,33 +853,66 @@ bool Window::Update(float delta_time)
         }
     }
 
+    // Fade animation
     if (m_closing)
     {
-        m_anim_progress -= delta_time * 6.0f;
+        m_anim_progress -= delta_time * 4.2f;
+        if (m_is_toast)
+        {
+            m_target_screen_pos.x = m_current_screen_pos.x - 45.0f * delta_time * 6.0f;
+        }
+
         if (m_anim_progress <= 0.0f)
         {
             m_anim_progress = 0.0f;
             m_is_alive = false;
             return false;
         }
+
+        float t = std::clamp(m_anim_progress, 0.0f, 1.0f);
+        m_alpha = t * t * (3.0f - 2.0f * t);
     }
     else
     {
         if (m_anim_progress < 1.0f)
         {
-            m_anim_progress += delta_time * 6.0f;
+            m_anim_progress += delta_time * 4.0f;
             if (m_anim_progress > 1.0f)
                 m_anim_progress = 1.0f;
         }
+
+        float t = std::clamp(m_anim_progress, 0.0f, 1.0f);
+        float inv = 1.0f - t;
+        m_alpha = 1.0f - inv * inv * inv;
     }
 
-    if (m_config.duration_seconds > 0.0f || m_closing)
+    if (m_hwnd && (m_config.duration_seconds > 0.0f || m_closing || m_is_toast))
     {
-        m_alpha = std::clamp(m_anim_progress, 0.0f, 1.0f);
-        if (m_hwnd)
+        BYTE byte_alpha = (BYTE)(std::clamp(m_alpha, 0.0f, 1.0f) * 255.f);
+        ::SetLayeredWindowAttributes(m_hwnd, 0, byte_alpha, LWA_ALPHA);
+    }
+
+    // Position interpolation
+    if (!m_is_user_dragging)
+    {
+        float diff_x = m_target_screen_pos.x - m_current_screen_pos.x;
+        float diff_y = m_target_screen_pos.y - m_current_screen_pos.y;
+        if (std::abs(diff_x) > 0.25f || std::abs(diff_y) > 0.25f)
         {
-            BYTE byte_alpha = (BYTE)(m_alpha * 255.f);
-            ::SetLayeredWindowAttributes(m_hwnd, 0, byte_alpha, LWA_ALPHA);
+            float pos_rate = 1.0f - std::exp(-13.5f * delta_time);
+            m_current_screen_pos.x += diff_x * pos_rate;
+            m_current_screen_pos.y += diff_y * pos_rate;
+
+            if (m_hwnd)
+            {
+                ::SetWindowPos(
+                    m_hwnd, nullptr,
+                    (int)std::round(m_current_screen_pos.x),
+                    (int)std::round(m_current_screen_pos.y),
+                    0, 0,
+                    SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE
+                );
+            }
         }
     }
 
@@ -964,52 +1021,67 @@ void Window::RenderBuiltinProgress(ImDrawList* draw_list)
     ImVec2 max_pt(p.x + s.x, p.y + s.y);
 
     float card_radius = (std::clamp)(m_config.corner_radius, 0.0f, (std::min)(s.x, s.y) * 0.5f);
-
-    if (m_config.draw_default_card_bg)
-    {
-        // bg
-        draw_list->AddRectFilled(p, max_pt, m_config.custom_bg_color, card_radius);
-
-        // border
-        draw_list->AddRect(p, max_pt, m_config.custom_border_color, card_radius, 0, m_config.border_thickness);
-    }
-
     ImFont* font = m_config.custom_font ? m_config.custom_font : ImGui::GetFont();
 
     if (!m_message.empty())
     {
-        // --- Standalone Toast Notification Rendering ---
-        // Left accent bar
-        ImVec2 bar_max(p.x + 4.f, max_pt.y);
+        // --- Standalone Liquid Toast Notification Rendering ---
+        // 1. Dark Acrylic Background with Subtle Glow Border
+        draw_list->AddRectFilled(p, max_pt, IM_COL32(14, 15, 20, 248), card_radius);
+        draw_list->AddRect(p, max_pt, IM_COL32(40, 44, 58, 220), card_radius, 0, 1.2f);
+
+        // 2. Left Accent Pill
+        ImVec2 bar_max(p.x + 4.5f, max_pt.y);
         draw_list->AddRectFilled(p, bar_max, m_config.custom_accent_color, card_radius, ImDrawFlags_RoundCornersLeft);
 
-        // Title
-        ImVec2 label_pos(p.x + 16.f, p.y + 12.f);
-        if (font)
-            draw_list->AddText(font, font->FontSize, label_pos, m_config.custom_text_color, m_title.c_str());
-        else
-            draw_list->AddText(label_pos, m_config.custom_text_color, m_title.c_str());
+        // 3. Glowing / Pulsing Status Dot
+        float pulse = 0.5f + 0.5f * sinf(m_time_alive * 5.0f);
+        draw_list->AddCircleFilled(ImVec2(p.x + 18.f, p.y + 19.f), 3.5f + pulse * 1.0f, m_config.custom_accent_color);
 
-        // Message
-        ImVec2 msg_pos(p.x + 16.f, p.y + 34.f);
-        ImU32 msg_color = IM_COL32(185, 185, 195, 230);
+        // 4. Title Header
+        ImVec2 label_pos(p.x + 28.f, p.y + 11.f);
         if (font)
-            draw_list->AddText(font, font->FontSize * 0.9f, msg_pos, msg_color, m_message.c_str());
+            draw_list->AddText(font, font->FontSize, label_pos, IM_COL32(255, 255, 255, 255), m_title.c_str());
+        else
+            draw_list->AddText(label_pos, IM_COL32(255, 255, 255, 255), m_title.c_str());
+
+        // 5. Category Tag (Right side)
+        ImVec2 tag_pos(max_pt.x - 72.f, p.y + 12.f);
+        ImU32 tag_col = IM_COL32(130, 135, 150, 200);
+        if (font)
+            draw_list->AddText(font, font->FontSize * 0.78f, tag_pos, tag_col, "SYSTEM");
+        else
+            draw_list->AddText(tag_pos, tag_col, "SYSTEM");
+
+        // 6. Notification Information Message Body
+        ImVec2 msg_pos(p.x + 18.f, p.y + 36.f);
+        ImU32 msg_color = IM_COL32(215, 220, 235, 240);
+        if (font)
+            draw_list->AddText(font, font->FontSize * 0.92f, msg_pos, msg_color, m_message.c_str());
         else
             draw_list->AddText(msg_pos, msg_color, m_message.c_str());
 
-        // Progress countdown bar (if duration > 0)
+        // 7. Smooth Liquid Progress countdown bar (if duration > 0)
         if (m_config.duration_seconds > 0.0f)
         {
             float countdown = std::clamp(1.0f - (m_time_alive / m_config.duration_seconds), 0.0f, 1.0f);
-            float track_w = s.x - 28.f;
-            ImVec2 bar_pos(p.x + 14.f, max_pt.y - 5.f);
-            draw_list->AddRectFilled(bar_pos, ImVec2(bar_pos.x + track_w, bar_pos.y + 2.f), m_config.custom_track_color, 1.f);
-            draw_list->AddRectFilled(bar_pos, ImVec2(bar_pos.x + track_w * countdown, bar_pos.y + 2.f), m_config.custom_accent_color, 1.f);
+            float track_w = s.x - 24.f;
+            ImVec2 bar_pos(p.x + 12.f, max_pt.y - 4.f);
+            draw_list->AddRectFilled(bar_pos, ImVec2(bar_pos.x + track_w, bar_pos.y + 2.f), IM_COL32(28, 30, 40, 180), 1.0f);
+            draw_list->AddRectFilled(bar_pos, ImVec2(bar_pos.x + track_w * countdown, bar_pos.y + 2.f), m_config.custom_accent_color, 1.0f);
         }
     }
     else
     {
+        if (m_config.draw_default_card_bg)
+        {
+            // bg
+            draw_list->AddRectFilled(p, max_pt, m_config.custom_bg_color, card_radius);
+
+            // border
+            draw_list->AddRect(p, max_pt, m_config.custom_border_color, card_radius, 0, m_config.border_thickness);
+        }
+
         // --- Built-in Progress Card Rendering ---
         ImVec2 label_pos(p.x + 32.f, p.y + 16.f);
         ImVec2 icon_pos(p.x + 17.f, p.y + 18.f);
@@ -1051,6 +1123,9 @@ LRESULT CALLBACK Window::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
 
     switch (msg)
     {
+    case WM_MOUSEACTIVATE:
+        return MA_NOACTIVATE;
+
     case WM_NCHITTEST:
     {
         if (!self || self->m_config.is_click_through)
@@ -1106,6 +1181,7 @@ LRESULT CALLBACK Window::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
         ::SetTimer(hWnd, 1002, 1, nullptr); // 1ms high-frequency timer for ultra-smooth 100+ FPS drag
         if (self)
         {
+            self->m_is_user_dragging = true;
             std::cout << "[OVERLAY DRAG START] ID: " << self->GetId()
                       << " | Size: (" << self->GetWindowSize().x << " x " << self->GetWindowSize().y << ")"
                       << " | Pos: (" << self->GetPosition().x << ", " << self->GetPosition().y << ")" << std::endl;
@@ -1126,6 +1202,17 @@ LRESULT CALLBACK Window::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
         ::timeEndPeriod(1);
         if (self)
         {
+            self->m_is_user_dragging = false;
+            RECT rc;
+            ::GetWindowRect(hWnd, &rc);
+            self->m_current_screen_pos = ImVec2((float)rc.left, (float)rc.top);
+            self->m_target_screen_pos = self->m_current_screen_pos;
+            self->m_config.anchor = AnchorMode::Screen_Absolute;
+            self->m_config.custom_pos = self->m_current_screen_pos;
+            if (self->m_on_drag_end_cb)
+            {
+                self->m_on_drag_end_cb(self, (int)self->m_current_screen_pos.x, (int)self->m_current_screen_pos.y);
+            }
             std::cout << "[OVERLAY DRAG END] ID: " << self->GetId()
                       << " | Final Pos: (" << self->GetPosition().x << ", " << self->GetPosition().y << ")" << std::endl;
         }
@@ -1143,6 +1230,7 @@ LRESULT CALLBACK Window::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
             if (prc)
             {
                 self->m_current_screen_pos = ImVec2((float)prc->left, (float)prc->top);
+                self->m_target_screen_pos = self->m_current_screen_pos;
                 std::cout << "[OVERLAY DRAG] ID: " << self->GetId()
                           << " | Screen Pos: (" << prc->left << ", " << prc->top << ")"
                           << " | Bounds: (" << (prc->right - prc->left) << " x " << (prc->bottom - prc->top) << ")" << std::endl;
@@ -1156,6 +1244,7 @@ LRESULT CALLBACK Window::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
             RECT rc;
             ::GetWindowRect(hWnd, &rc);
             self->m_current_screen_pos = ImVec2((float)rc.left, (float)rc.top);
+            self->m_target_screen_pos = self->m_current_screen_pos;
             if (self->m_on_move_cb)
                 self->m_on_move_cb(self, rc.left, rc.top);
 
@@ -1809,7 +1898,11 @@ std::vector<std::string> Manager::GetFloatingOverlayIds() const
 
 void Manager::UpdateFloatingOverlays(float delta_time)
 {
-    // Collect all active toast windows in creation order (oldest -> newest)
+    // 1. Base origin for main notifications: Fixed at top-left corner
+    float base_x = 24.0f;
+    float base_y = 24.0f;
+
+    // 2. Collect all active toast windows in creation order (oldest -> newest)
     std::vector<Window*> active_toasts;
     for (auto& overlay : m_floating_overlays)
     {
@@ -1819,16 +1912,39 @@ void Manager::UpdateFloatingOverlays(float delta_time)
         }
     }
 
-    // Stack upward from bottom: newest at bottom, older notifications shift up
-    int count = (int)active_toasts.size();
-    for (int i = 0; i < count; ++i)
+    // Stack top-left notifications vertically; surviving toasts glide upward on close
+    int slot_index = 0;
+    for (size_t i = 0; i < active_toasts.size(); ++i)
     {
-        int slot = (count - 1) - i;
         Window* toast = active_toasts[i];
-        if (toast && !toast->IsClosing())
+        if (!toast) continue;
+
+        if (toast->GetConfig().anchor == AnchorMode::Screen_TopLeft)
         {
-            float target_offset_y = 20.f + (float)slot * (toast->GetConfig().size.y + toast->GetConfig().padding.y + toast->GetConfig().padding.w + 8.f);
-            toast->SetAnchor(toast->GetConfig().anchor, ImVec2(20.f, target_offset_y));
+            if (!toast->IsClosing())
+            {
+                float toast_h = toast->GetWindowSize().y;
+                float target_y = base_y + (float)slot_index * (toast_h + 10.0f);
+                float target_x = base_x;
+
+                toast->SetTargetScreenPosition(target_x, target_y);
+                slot_index++;
+            }
+            else
+            {
+                // Disappearing toast glides back into corner/offscreen to the left
+                toast->SetTargetScreenPosition(base_x - 110.0f, toast->GetPosition().y);
+            }
+        }
+        else
+        {
+            // Bottom-Right or other anchors: stack upwards
+            if (!toast->IsClosing())
+            {
+                float target_offset_y = 20.f + (float)slot_index * (toast->GetWindowSize().y + 8.f);
+                toast->SetAnchor(toast->GetConfig().anchor, ImVec2(20.f, target_offset_y));
+                slot_index++;
+            }
         }
     }
 
@@ -1852,40 +1968,19 @@ void Manager::UpdateFloatingOverlays(float delta_time)
 void Manager::PushToast(const std::string& title, const std::string& message,
                         float duration, ImU32 accent, AnchorMode anchor)
 {
-    static int toast_counter = 0;
+    static std::atomic<int> toast_counter{ 0 };
     std::string id = "toast_" + std::to_string(++toast_counter);
 
-    // Count currently active toast windows to calculate vertical stack offset on the desktop screen
-    int active_toasts = 0;
-    for (const auto& ov : m_floating_overlays)
-    {
-        if (ov && ov->GetId().rfind("toast_", 0) == 0 && ov->IsAlive())
-            active_toasts++;
-    }
+    ToastEntry entry;
+    entry.id = id;
+    entry.title = title;
+    entry.message = message;
+    entry.duration = duration > 0.f ? duration : 4.0f;
+    entry.accent = accent;
+    entry.anchor = anchor;
 
-    Config cfg;
-    cfg.window_title = "Notification";
-    cfg.anchor = anchor;
-    cfg.size = ImVec2(340.f, 76.f);
-    cfg.padding = ImVec4(12.f, 12.f, 12.f, 12.f);
-    cfg.duration_seconds = duration > 0.f ? duration : 4.0f;
-    cfg.is_topmost = true;
-    cfg.hide_from_taskbar = true;
-    cfg.is_click_through = false;
-    cfg.is_movable = true;
-    cfg.draw_default_card_bg = true;
-    cfg.custom_accent_color = accent;
-
-    // Stack vertically from the desktop monitor bottom-right corner
-    float stack_offset_y = 24.f + (float)(active_toasts % 6) * (cfg.size.y + cfg.padding.y + cfg.padding.w + 10.f);
-
-    Window* toast_win = CreateFloatingOverlay(id, cfg, nullptr);
-    if (toast_win)
-    {
-        toast_win->SetToastData(title, message, accent);
-        toast_win->SetAnchor(anchor, ImVec2(24.f, stack_offset_y));
-        toast_win->Show();
-    }
+    std::lock_guard<std::mutex> lock(m_toast_mutex);
+    m_toast_queue.push_back(std::move(entry));
 }
 
 void Manager::DismissToast(const std::string& title)
@@ -1920,6 +2015,64 @@ size_t Manager::GetToastCount() const
 void Manager::UpdateToasts(float delta_time)
 {
     (void)delta_time;
+
+    // Drain queued toast requests on the main UI/render thread
+    std::vector<ToastEntry> pending;
+    {
+        std::lock_guard<std::mutex> lock(m_toast_mutex);
+        while (!m_toast_queue.empty())
+        {
+            pending.push_back(std::move(m_toast_queue.front()));
+            m_toast_queue.pop_front();
+        }
+    }
+
+    for (const auto& item : pending)
+    {
+        int active_toasts = 0;
+        for (const auto& ov : m_floating_overlays)
+        {
+            if (ov && ov->GetId().rfind("toast_", 0) == 0 && ov->IsAlive() && !ov->IsClosing())
+                active_toasts++;
+        }
+
+        Config cfg;
+        cfg.window_title = "Notification";
+        cfg.anchor = item.anchor;
+        cfg.size = ImVec2(340.f, 76.f);
+        cfg.padding = ImVec4(12.f, 12.f, 12.f, 12.f);
+        cfg.duration_seconds = item.duration;
+        cfg.is_topmost = true;
+        cfg.hide_from_taskbar = true;
+        cfg.is_click_through = true;
+        cfg.is_movable = false;
+        cfg.draw_default_card_bg = true;
+        cfg.custom_accent_color = item.accent;
+
+        float base_x = 24.0f;
+        float base_y = 24.0f;
+        float full_card_h = cfg.size.y + cfg.padding.y + cfg.padding.w + 10.0f;
+        float target_y = base_y + (float)active_toasts * full_card_h;
+        float target_x = base_x;
+
+        Window* toast_win = CreateFloatingOverlay(item.id, cfg, nullptr);
+        if (toast_win)
+        {
+            toast_win->SetToastData(item.title, item.message, item.accent);
+            if (item.anchor == AnchorMode::Screen_TopLeft)
+            {
+                toast_win->SetTargetScreenPosition(target_x, target_y);
+                toast_win->SetPosition((int)(target_x - 90.0f), (int)target_y);
+            }
+            else
+            {
+                float stack_offset_y = 24.f + (float)(active_toasts % 6) * (cfg.size.y + cfg.padding.y + cfg.padding.w + 10.f);
+                toast_win->SetAnchor(item.anchor, ImVec2(24.f, stack_offset_y));
+            }
+            toast_win->SetOpacity(0.0f);
+            toast_win->Show();
+        }
+    }
 }
 
 void Manager::RenderToasts()
