@@ -1,30 +1,7 @@
-//        ___       ___              _           _____  ___ _ 
-//       |_ _|_ __ / _ \__ _____ _ _| |__ _ _  _|   \ \/ / / |
-//        | || '  \ (_) \ V / -_) '_| / _` | || | |) >  <| | |
-//       |___|_|_|_\___/ \_/\___|_| |_\__,_|\_, |___/_/\_\_|_|
-//                                    |__/              
-//
-//  ImOverlay-DX11: Hardware-Accelerated Desktop Overlay & Multi-Window Framework
-//  Implementation Source File (Version 1.0.0)
-//  https://github.com/rabbanyhmm/ImOverlay-DX11
-//
-//  SPDX-FileCopyrightText: 2026 rabbanyhmm <https://github.com/rabbanyhmm>
-//  SPDX-License-Identifier: MIT
+// ImOverlay-DX11: Desktop overlay & multi-window framework for DirectX 11 and Dear ImGui
+// https://github.com/rabbanyhmm/ImOverlay-DX11
+// SPDX-License-Identifier: MIT
 
-/****************************************************************************\
- *                                                                          *
- *  ImOverlay-DX11 Core Implementation Details:                             *
- *  ------------------------------------------                              *
- *  - DWM Composition & Backdrop: Integrates Windows 11 DWMWA_SYSTEMBACKDROP*
- *    and Windows 10 SetWindowCompositionAttribute for hardware blur.       *
- *  - Screen Capture Exclusion: Applies WDA_EXCLUDEFROMCAPTURE per HWND.    *
- *  - Magnetic Snapping: Intercepts WM_MOVING for smooth border docking.    *
- *  - Multi-Toast Queue: Lock-guarded circular buffer with slide animation. *
- *  - Global Hotkeys: Spawns dedicated message-only HWND pump thread.       *
- *                                                                          *
- *  See overlay_manager.h for the full public API declarations.             *
- *                                                                          *
-\****************************************************************************/
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -40,9 +17,7 @@
 #include <sstream>
 #include <chrono>
 
-// ============================================================================
-// DWM Composition Attribute (Windows 10 Acrylic fallback)
-// ============================================================================
+// DWM composition attributes (Windows 10 acrylic fallback)
 #ifndef DWMWA_SYSTEMBACKDROP_TYPE
 #define DWMWA_SYSTEMBACKDROP_TYPE 38
 #endif
@@ -96,9 +71,7 @@ using PFN_SetWindowCompositionAttribute =
 namespace ImOverlay
 {
 
-// ============================================================================
-// Window Implementation
-// ============================================================================
+// Window implementation
 
 Window::Window(const std::string& id, ID3D11Device* device,
                IDXGIFactory* factory, const Config& config)
@@ -363,7 +336,7 @@ void Window::InitWindow(IDXGIFactory* factory)
                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     }
 
-    // Feature 1: Apply Acrylic/Mica blur if requested
+    // Apply acrylic/mica blur if configured
     if (m_config.enable_acrylic_blur)
         ApplyAcrylicEffect();
 
@@ -378,9 +351,7 @@ void Window::InitWindow(IDXGIFactory* factory)
     }
 }
 
-// ============================================================================
-// Feature 1: Acrylic / Mica DWM Hardware Blur
-// ============================================================================
+// DWM blur & acrylic
 
 void Window::ApplyAcrylicEffect()
 {
@@ -453,9 +424,7 @@ void Window::SetAcrylicBlur(bool enable, AcrylicType type)
     else { ApplyAcrylicEffect(); }
 }
 
-// ============================================================================
-// Feature 2: Magnetic Edge Snapping
-// ============================================================================
+// Window snapping
 
 void Window::SnapWindowPosition(RECT& rc)
 {
@@ -1198,9 +1167,7 @@ LRESULT CALLBACK Window::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
     return ::DefWindowProcW(hWnd, msg, wParam, lParam);
 }
 
-// ============================================================================
-// Manager Implementation
-// ============================================================================
+// Manager implementation
 
 Manager::~Manager()
 {
@@ -1842,9 +1809,7 @@ void Manager::UpdateFloatingOverlays(float delta_time)
         }
     }
 
-    // Dynamic upward stacking:
-    // Newest toast (last in active_toasts) gets slot 0 (at the bottom).
-    // Older active toasts get slot 1, 2, 3... and are shifted UPWARDS above newer ones!
+    // Stack upward from bottom: newest at bottom, older notifications shift up
     int count = (int)active_toasts.size();
     for (int i = 0; i < count; ++i)
     {
@@ -1872,9 +1837,7 @@ void Manager::UpdateFloatingOverlays(float delta_time)
 }
 
 
-// ============================================================================
-// Feature 3: Multi-Toast Queue & Stacking Engine
-// ============================================================================
+// Toast notifications
 
 void Manager::PushToast(const std::string& title, const std::string& message,
                         float duration, ImU32 accent, AnchorMode anchor)
@@ -1953,9 +1916,7 @@ void Manager::RenderToasts()
 {
 }
 
-// ============================================================================
-// Feature 5: Global Hotkey Listener
-// ============================================================================
+// Global hotkeys
 
 bool Manager::RegisterHotkey(int id, UINT modifiers, UINT vk,
                               HotkeyAction action, std::function<void()> custom_cb)

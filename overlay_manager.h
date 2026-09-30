@@ -1,47 +1,14 @@
-//        ___       ___              _           _____  ___ _ 
-//       |_ _|_ __ / _ \__ _____ _ _| |__ _ _  _|   \ \/ / / |
-//        | || '  \ (_) \ V / -_) '_| / _` | || | |) >  <| | |
-//       |___|_|_|_\___/ \_/\___|_| |_\__,_|\_, |___/_/\_\_|_|
-//                                    |__/              
-//
-//  ImOverlay-DX11: Hardware-Accelerated Desktop Overlay & Multi-Window Framework
-//  version 1.0.0 (Release Build: 2026-08-14)
-//  https://github.com/rabbanyhmm/ImOverlay-DX11
-//
-//  SPDX-FileCopyrightText: 2026 rabbanyhmm <https://github.com/rabbanyhmm>
-//  SPDX-License-Identifier: MIT
+// ImOverlay-DX11: Desktop overlay & multi-window framework for DirectX 11 and Dear ImGui
+// https://github.com/rabbanyhmm/ImOverlay-DX11
+// SPDX-License-Identifier: MIT
 
-/****************************************************************************\
- *                                                                          *
- *  Note on Documentation and Architecture:                                 *
- *  --------------------------------------                                  *
- *  ImOverlay-DX11 is a standalone, lightweight, multi-window overlay       *
- *  framework written for Direct3D 11 and Dear ImGui on Windows 10/11.      *
- *                                                                          *
- *  Key Capabilities:                                                       *
- *  - 2-File Architecture: Drop 'overlay_manager.h' and '.cpp' into your    *
- *    project with zero third-party dependencies beyond Win32 + ImGui.      *
- *  - Hardware-Accelerated DWM Blur: Real Acrylic and Mica frosted-glass.   *
- *  - Magnetic Window Snapping: Smart edge & inter-window auto-docking.     *
- *  - Streamer Mode (Anti-Capture): Per-window WDA_EXCLUDEFROMCAPTURE to   *
- *    stay completely invisible to OBS, Discord, and screen recording apps. *
- *  - Multi-Toast Queue: Thread-safe, stacked notifications with slide-in.  *
- *  - Global Hotkeys: Non-blocking background listener for gaming hotkeys.  *
- *  - Sub-Window Hierarchy: Cascading close/hide/minimize and drag-follow.  *
- *                                                                          *
- *  Official Repository & Issue Tracker:                                    *
- *  https://github.com/rabbanyhmm/ImOverlay-DX11.git                        *
- *                                                                          *
-\****************************************************************************/
 
 #ifndef IMOVERLAY_DX11_HPP_
 #define IMOVERLAY_DX11_HPP_
 
 #pragma once
 
-// ============================================================================
-// Version Definitions & Metadata
-// ============================================================================
+// Version
 #define IMOVERLAY_VERSION_MAJOR 1
 #define IMOVERLAY_VERSION_MINOR 0
 #define IMOVERLAY_VERSION_PATCH 0
@@ -50,9 +17,7 @@
 #define IMOVERLAY_VERSION_NUMBER \
     (IMOVERLAY_VERSION_MAJOR * 10000 + IMOVERLAY_VERSION_MINOR * 100 + IMOVERLAY_VERSION_PATCH)
 
-// ============================================================================
-// Compiler & Platform Checks
-// ============================================================================
+// Platform checks
 #if !defined(_WIN32) && !defined(_WIN64)
     #error "ImOverlay-DX11 is only supported on Windows platforms (Windows 10 / Windows 11)."
 #endif
@@ -116,9 +81,7 @@
 namespace ImOverlay
 {
 
-// ============================================================================
-// Enums & Structs
-// ============================================================================
+// Types
 
 enum class TransitionMode
 {
@@ -185,65 +148,63 @@ struct Element
 
 struct Config
 {
-    std::string window_title = "ImOverlay Window";     // OS Window Title (shows in Taskbar/Alt+Tab)
-    std::string parent_id = "main_menu";               // Parent window ID ("main_menu", overlay ID, or "" for root)
+    std::string window_title = "ImOverlay Window";
+    std::string parent_id = "main_menu";
     AnchorMode anchor = AnchorMode::Screen_BottomRight;
-    ImVec2 custom_pos = ImVec2(0.f, 0.f);               // Used if AnchorMode::Screen_Absolute
-    ImVec2 offset_from_parent = ImVec2(0.f, 0.f);       // Used if AnchorMode::RelativeToParentWindow
-    ImVec2 size = ImVec2(340.f, 80.f);                  // Window dimensions
-    ImVec4 padding = ImVec4(16.f, 16.f, 16.f, 16.f);    // Transparent margin buffer
+    ImVec2 custom_pos = ImVec2(0.f, 0.f);
+    ImVec2 offset_from_parent = ImVec2(0.f, 0.f);
+    ImVec2 size = ImVec2(340.f, 80.f);
+    ImVec4 padding = ImVec4(16.f, 16.f, 16.f, 16.f);
 
-    bool is_topmost = true;             // Stay above full-screen games/apps (HWND_TOPMOST)
-    bool topmost = true;                // Alias for is_topmost
-    bool hide_from_taskbar = true;      // Hide from taskbar and Alt+Tab (WS_EX_TOOLWINDOW)
-    bool exclude_from_capture = false;  // Streamer Mode: Hide from OBS/Discord/Screenshots (WDA_EXCLUDEFROMCAPTURE)
-    bool is_movable = true;             // Draggable anywhere by user (HTCAPTION)
-    bool is_click_through = false;      // Visual-only click-through toggle
-    bool start_hidden = false;          // Create window initially hidden
-    bool start_minimized = false;       // Create window initially minimized
+    bool is_topmost = true;
+    bool topmost = true;
+    bool hide_from_taskbar = true;
+    bool exclude_from_capture = false;
+    bool is_movable = true;
+    bool is_click_through = false;
+    bool start_hidden = false;
+    bool start_minimized = false;
 
-    // Hierarchy & Cascade Behavior
-    bool close_with_parent = true;      // Auto-close when parent window closes
-    bool hide_with_parent = true;       // Auto-hide when parent window hides
-    bool minimize_with_parent = true;   // Auto-minimize when parent window minimizes
-    bool follow_parent_movement = true; // Sub-window follows parent position when parent is dragged
+    // Hierarchy
+    bool close_with_parent = true;
+    bool hide_with_parent = true;
+    bool minimize_with_parent = true;
+    bool follow_parent_movement = true;
 
-    // Hit-Testing Regions
-    std::vector<ImRect> clickable_regions; // Specific clickable hitboxes (e.g. buttons only)
-    std::vector<ImRect> drag_regions;      // Specific drag header/caption hitboxes (empty = whole body draggable)
+    // Hit-testing regions
+    std::vector<ImRect> clickable_regions;
+    std::vector<ImRect> drag_regions;
 
-    // Lifetime & Timing
-    float duration_seconds = -1.0f;     // -1 = permanent window, > 0 = auto-dismiss after seconds
-    bool auto_dismiss_on_finish = true; // Auto-close after task/progress completes
-    float finish_dismiss_delay = 2.0f;  // Delay in seconds before closing after hitting 100%
-    float initial_opacity = 1.0f;       // Base opacity 0.0f - 1.0f
+    // Lifetime
+    float duration_seconds = -1.0f;     // < 0 for permanent, > 0 for auto-dismiss seconds
+    bool auto_dismiss_on_finish = true;
+    float finish_dismiss_delay = 2.0f;
+    float initial_opacity = 1.0f;
 
-    // Visual Customization & Styling
-    float corner_radius = 16.0f;        // Border radius
-    bool draw_default_card_bg = true;   // Draw glassmorphism background rect
-    ImU32 custom_bg_color = IM_COL32(18, 18, 20, 240);       // Dark glass background
-    ImU32 custom_border_color = IM_COL32(255, 255, 255, 25); // Subtle border
-    ImU32 custom_accent_color = IM_COL32(138, 143, 255, 255); // Primary accent
-    ImU32 custom_text_color = IM_COL32(255, 255, 255, 255);   // White text
-    ImU32 custom_track_color = IM_COL32(255, 255, 255, 12);   // Progress track
+    // Styling
+    float corner_radius = 16.0f;
+    bool draw_default_card_bg = true;
+    ImU32 custom_bg_color = IM_COL32(18, 18, 20, 240);
+    ImU32 custom_border_color = IM_COL32(255, 255, 255, 25);
+    ImU32 custom_accent_color = IM_COL32(138, 143, 255, 255);
+    ImU32 custom_text_color = IM_COL32(255, 255, 255, 255);
+    ImU32 custom_track_color = IM_COL32(255, 255, 255, 12);
     float border_thickness = 1.0f;
-    float accent_alpha = 1.0f;          // Opacity of the left accent bar
+    float accent_alpha = 1.0f;
 
-    // Acrylic & Snapping Configuration
+    // Blur and snapping
     bool enable_acrylic_blur = false;
     AcrylicType acrylic_type = AcrylicType::Acrylic;
-    bool enable_snap = false;           // Magnetic snapping disabled by default for 1:1 zero-lag drag
-    float snap_threshold = 18.0f;       // Distance in pixels to trigger edge snap
-    bool play_snap_sound = false;       // Optional audio feedback on snap
+    bool enable_snap = false;
+    float snap_threshold = 18.0f;
+    bool play_snap_sound = false;
 
     // Typography
     ImFont* custom_font = nullptr;
     ImFont* custom_icon_font = nullptr;
 };
 
-// ============================================================================
-// Window Class (Secondary Windows & Detached Overlays)
-// ============================================================================
+// Window
 
 class Window
 {
@@ -295,7 +256,7 @@ public:
     bool Update(float delta_time);
     void Render();
 
-    // --- Window Visibility & State Controls ---
+    // Visibility and state
     void Show(bool cascade_to_children = true);
     void Hide(bool cascade_to_children = true);
     void SetVisible(bool visible, bool cascade_to_children = true);
@@ -307,7 +268,7 @@ public:
     bool IsMinimized() const;
     bool IsMaximized() const;
 
-    // --- Per-Window Configuration & Modifiers ---
+    // Configuration
     void SetWindowTitle(const std::string& title);
     const std::string& GetWindowTitle() const { return m_config.window_title; }
 
@@ -337,12 +298,12 @@ public:
     void SetOpacity(float alpha);
     float GetOpacity() const { return m_alpha; }
 
-    // --- Feature 1: Acrylic / Mica DWM Blur ---
+    // DWM blur
     void SetAcrylicBlur(bool enable, AcrylicType type = AcrylicType::Acrylic);
     bool IsAcrylicBlurEnabled() const { return m_config.enable_acrylic_blur; }
     AcrylicType GetAcrylicType() const { return m_config.acrylic_type; }
 
-    // --- Feature 2: Magnetic Edge Snapping ---
+    // Snapping
     bool IsSnapped() const { return m_snap_edge != SnapEdge::None; }
     SnapEdge GetSnapEdge() const { return m_snap_edge; }
     void SetSnapEnabled(bool enable) { m_config.enable_snap = enable; }
@@ -365,7 +326,7 @@ public:
         m_config.custom_icon_font = icon_font;
     }
 
-    // --- Parent / Child Hierarchy Management ---
+    // Hierarchy
     void SetParentId(const std::string& parent_id) { m_config.parent_id = parent_id; }
     const std::string& GetParentId() const { return m_config.parent_id; }
 
@@ -376,7 +337,7 @@ public:
 
     void OnParentMoved(int parent_x, int parent_y);
 
-    // --- Event Callbacks ---
+    // Callbacks
     void SetOnCloseCallback(EventCallback cb) { m_on_close_cb = cb; }
     void SetOnMoveCallback(MoveCallback cb) { m_on_move_cb = cb; }
     void SetOnResizeCallback(ResizeCallback cb) { m_on_resize_cb = cb; }
@@ -402,8 +363,8 @@ private:
     void CalculateScreenPosition(const ImVec2& margin = ImVec2(24.f, 24.f));
     void RenderBuiltinProgress(ImDrawList* draw_list);
     void ResizeBuffers(int width, int height);
-    void ApplyAcrylicEffect();          // Feature 1: DWM blur/acrylic setup
-    void SnapWindowPosition(RECT& rc);  // Feature 2: magnetic snap, modifies RECT in WM_MOVING
+    void ApplyAcrylicEffect();
+    void SnapWindowPosition(RECT& rc);
 
     std::string m_id;
     HWND m_hwnd = nullptr;
@@ -433,10 +394,7 @@ private:
     float m_progress = 0.0f;
     float m_finish_timer = 0.0f;
 
-    // Feature 2: snap state
     SnapEdge m_snap_edge = SnapEdge::None;
-
-    // Feature 4: per-window ImGui context
     ImGuiContext* m_imgui_context = nullptr;
     ImDrawList* m_current_draw_list = nullptr;
 
@@ -446,9 +404,7 @@ private:
     ResizeCallback m_on_resize_cb = nullptr;
 };
 
-// ============================================================================
-// Manager Class (Singleton)
-// ============================================================================
+// Manager
 
 class Manager
 {
@@ -500,8 +456,7 @@ public:
     bool IsTopmost() const { return m_is_topmost; }
     void SetAutoTopmost(bool enable) { m_auto_topmost = enable; }
 
-    // Screen Capture Protection (Streamer Mode / Anti-Recording)
-    // Granular Per-Window Controls:
+    // Screen capture exclusion (WDA_EXCLUDEFROMCAPTURE)
     void SetMainCaptureHidden(bool hide);
     bool IsMainCaptureHidden() const { return m_main_exclude_from_capture; }
     void SetCaptureHidden(HWND hwnd, bool hide);
@@ -512,17 +467,14 @@ public:
     void StopCaptureMonitor();
     bool IsCaptureMonitorRunning() const { return m_monitor_running.load(); }
 
-    // Taskbar & Alt+Tab Controls (Per-Window & Bulk):
+    // Taskbar visibility
     void SetMainTaskbarVisible(bool visible);
     bool IsMainTaskbarVisible() const { return !m_main_hide_from_taskbar; }
     void SetTaskbarVisible(const std::string& window_id, bool visible);
     bool IsTaskbarVisible(const std::string& window_id) const;
     void SetTaskbarVisibleAll(bool visible);
 
-    // =========================================================================
-    // Feature 3: Multi-Toast Queue & Stacking Engine
-    // Thread-safe: PushToast may be called from any thread.
-    // =========================================================================
+    // Toast notifications (thread-safe)
     void PushToast(const std::string& title, const std::string& message,
                    float duration = 4.0f,
                    ImU32 accent = IM_COL32(138, 143, 255, 255),
@@ -531,11 +483,7 @@ public:
     void DismissAllToasts();
     size_t GetToastCount() const;
 
-    // Legacy — redirects to PushToast
-    // =========================================================================
-    // Feature 5: Global Hotkey Listener
-    // Spawns a message-only HWND on a background thread; thread-safe.
-    // =========================================================================
+    // Hotkeys (thread-safe)
     bool RegisterHotkey(int id, UINT modifiers, UINT vk, HotkeyAction action,
                         std::function<void()> custom_cb = nullptr);
     void UnregisterHotkey(int id);
@@ -563,7 +511,7 @@ public:
     // Handle Win32 WM_NCHITTEST message
     LRESULT HandleHitTest(LPARAM lParam);
 
-    // --- Detached Floating Overlay Windows & Hierarchy ---
+    // Floating overlays
     Window* CreateFloatingOverlay(const std::string& id, const Config& config,
                                   Window::RenderCallback callback = nullptr);
 
@@ -641,9 +589,7 @@ private:
     std::mutex m_hidden_windows_mutex;
     std::unordered_set<HWND> m_hidden_capture_windows;
 
-    // -------------------------------------------------------------------------
-    // Feature 3: Multi-Toast Queue
-    // -------------------------------------------------------------------------
+    // Toast notifications
     struct ToastEntry
     {
         std::string  id;             // Unique id (title + index)
@@ -677,9 +623,7 @@ private:
     void UpdateToasts(float delta_time);
     void RenderToasts();
 
-    // -------------------------------------------------------------------------
-    // Feature 5: Global Hotkey Listener
-    // -------------------------------------------------------------------------
+    // Hotkey listener
     struct HotkeyEntry
     {
         int         id;
@@ -706,9 +650,7 @@ private:
 
 } // namespace ImOverlay
 
-// ============================================================================
-// Global Backward-Compatible Type Aliases
-// ============================================================================
+// Compatibility aliases
 using OverlayManager = ImOverlay::Manager;
 using FloatingOverlayWindow = ImOverlay::Window;
 using OverlayConfig = ImOverlay::Config;
