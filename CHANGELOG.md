@@ -1,4 +1,4 @@
-﻿# Changelog
+# Changelog
 
 All notable changes to **ImOverlay-DX11** are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
@@ -8,7 +8,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [1.0.0] — 2026-08-14
 
-### 🎉 Initial Release
+### Initial Release
 
 #### Added
 - **2-file library architecture** (`overlay_manager.h` + `overlay_manager.cpp`)
@@ -23,7 +23,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 #### Core Window System
 - `Manager` singleton with `Init()`, `SetD3DObjects()`, `SetDXGIFactory()`
 - `Window` class with per-window D3D11 swapchain, `WS_EX_LAYERED` transparency
-- `Config` struct — comprehensive per-window configuration
+- `Config` struct for per-window settings
 - `AnchorMode` — `Screen_BottomRight/TopLeft/TopRight/BottomLeft/Center/Absolute/Relative/RelativeToParentWindow`
 - `TransitionMode` — `Smooth` (exponential interpolation) / `Instant`
 - Parent/child window hierarchy with cascade close/hide/minimize/follow
